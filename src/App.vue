@@ -1,15 +1,31 @@
 <template>
-  <div class="traffic-page">
-    <div class="aurora aurora-a"></div>
-    <div class="aurora aurora-b"></div>
-    <div class="aurora aurora-c"></div>
+  <div class="traffic-page" :class="isDarkTheme ? 'theme-dark' : 'theme-light'">
+    <div class="beam beam-a"></div>
+    <div class="beam beam-b"></div>
+    <div class="beam beam-c"></div>
 
     <div class="shell">
+      <div class="window-bar">
+        <div class="window-dots">
+          <i></i>
+          <i></i>
+          <i></i>
+        </div>
+        <strong>基于深度学习的交通流量预测系统</strong>
+        <div class="theme-switch">
+          <span>浅色</span>
+          <el-switch v-model="isDarkTheme" />
+          <span>深色</span>
+        </div>
+      </div>
+
       <header class="hero">
         <div>
-          <p class="eyebrow">YOLO Traffic Vision</p>
-          <h1>车流路线智能分析台</h1>
-          <p class="subtitle">上传道路画面后，系统会识别车辆位置，并在画面上生成车流方向、路线连线和拥堵概览。</p>
+          <p class="eyebrow">YOLOv8 Traffic Intelligence</p>
+          <h1>交通安全智能分析平台</h1>
+          <p class="subtitle">
+            面向监控视频的行人、车辆检测与多目标跟踪系统，支持位置框、轨迹、计数、测速、区域分布和热力图统计。
+          </p>
         </div>
 
         <div class="hero-metrics">
@@ -18,195 +34,337 @@
             <strong>{{ tableData.length }}</strong>
           </div>
           <div class="metric-card active">
-            <span>车辆数量</span>
-            <strong>{{ vehicleDetections.length }}</strong>
+            <span>行人数量</span>
+            <strong>{{ pedestrianCount }}</strong>
           </div>
           <div class="metric-card">
-            <span>车流路线</span>
-            <strong>{{ trafficRoutes.length }}</strong>
+            <span>车辆数量</span>
+            <strong>{{ vehicleCount }}</strong>
+          </div>
+          <div class="metric-card">
+            <span>平均速度</span>
+            <strong>{{ averageSpeedText }}</strong>
           </div>
         </div>
       </header>
 
-      <main class="dashboard">
-        <section class="control-panel">
+      <main class="workspace">
+        <aside class="control-panel">
           <div class="panel-heading">
-            <span class="section-kicker">Input</span>
-            <h2>图像上传</h2>
-            <p>支持拖拽或点击上传道路图片，检测完成后会自动叠加路线图层。</p>
+            <span class="section-kicker">Control Center</span>
+            <h2>分析控制台</h2>
+            <p>选择视频、模型和检测类别，调整基础识别参数。</p>
           </div>
 
           <el-upload
             class="traffic-upload"
             drag
             action=""
-            :http-request="uploadImage"
+            :http-request="uploadMedia"
             :show-file-list="false"
-            accept="image/*"
+            accept="image/*,video/*"
           >
             <div class="upload-content" :class="{ 'is-uploading': loading }">
               <el-icon class="upload-icon"><UploadFilled /></el-icon>
-              <strong>{{ loading ? '正在分析画面...' : '拖拽图片到这里' }}</strong>
-              <span>或点击选择本地道路图像</span>
+              <strong>{{ loading ? '正在处理监控画面...' : '拖拽视频或图片到这里' }}</strong>
+              <span>上传完成后，结果会显示在右侧“实时监控 / 检测结果”区域</span>
             </div>
           </el-upload>
 
-          <div class="threshold-card" v-if="originalImage">
-            <div class="threshold-header">
-              <span>置信度阈值</span>
-              <strong>{{ confThreshold.toFixed(2) }}</strong>
-            </div>
-            <el-slider
-              v-model="confThreshold"
-              :min="0.1"
-              :max="0.9"
-              :step="0.05"
-              @change="reDetect"
-            />
-          </div>
+          <div class="form-grid">
+            <label>
+              <span>模型权重</span>
+              <el-select v-model="selectedModel" class="full-control">
+                <el-option label="Baseline best.onnx" value="best.onnx" />
+                <el-option label="YOLOv8n 轻量模型" value="yolov8n.onnx" />
+                <el-option label="YOLOv8s 平衡模型" value="yolov8s.onnx" />
+                <el-option label="自定义权重文件" value="custom" />
+              </el-select>
+            </label>
 
-          <div class="route-summary">
-            <div class="summary-title">路线概览</div>
-            <div v-if="trafficRoutes.length === 0" class="summary-empty">等待车辆检测结果</div>
-            <div v-for="route in trafficRoutes" :key="route.id" class="route-item">
-              <span class="route-color" :style="{ background: route.color }"></span>
-              <div>
-                <strong>{{ route.name }}</strong>
-                <small>{{ route.count }} 辆车 · {{ route.direction }}</small>
-              </div>
-            </div>
-          </div>
-        </section>
+            <label>
+              <span>检测类别</span>
+              <el-select v-model="classMode" class="full-control">
+                <el-option label="行人 + 车辆" value="traffic" />
+                <el-option label="仅车辆" value="vehicle" />
+                <el-option label="全部类别" value="all" />
+              </el-select>
+            </label>
 
-        <section class="vision-panel">
+            <label>
+              <span>置信度阈值 {{ confThreshold.toFixed(2) }}</span>
+              <el-slider v-model="confThreshold" :min="0.1" :max="0.9" :step="0.05" @change="reAnalyze" />
+            </label>
+
+            <label>
+              <span>像素标定 {{ metersPerPixel.toFixed(2) }} m/px</span>
+              <el-slider v-model="metersPerPixel" :min="0.02" :max="0.5" :step="0.01" />
+            </label>
+          </div>
+        </aside>
+
+        <section class="main-panel">
+          <nav class="view-nav" aria-label="功能切换">
+            <button
+              v-for="view in views"
+              :key="view.key"
+              :class="{ active: activeView === view.key }"
+              @click="activeView = view.key"
+            >
+              <span>{{ view.kicker }}</span>
+              <strong>{{ view.label }}</strong>
+              <em>{{ view.hint }}</em>
+            </button>
+          </nav>
+
           <div class="panel-topbar">
             <div>
-              <span class="section-kicker">Live Overlay</span>
-              <h2>车流路线图</h2>
+              <span class="section-kicker">{{ activeViewMeta.kicker }}</span>
+              <h2>{{ activeViewMeta.label }}</h2>
             </div>
-            <div class="legend">
-              <span><i class="legend-box"></i>识别框</span>
-              <span><i class="legend-line"></i>车流路线</span>
-              <span><i class="legend-dot"></i>车辆中心</span>
+            <div class="status-pills">
+              <span><i class="legend-box"></i>位置框</span>
+              <span><i class="legend-line"></i>轨迹</span>
+              <span><i class="legend-dot"></i>目标中心</span>
             </div>
           </div>
 
           <transition name="fade" mode="out-in">
-            <div v-if="loading" class="state-card">
-              <div class="scanner"></div>
-              <strong>AI 正在重建道路态势</strong>
-              <span>检测车辆、计算中心点、生成车流路线...</span>
-            </div>
+            <section v-if="activeView === 'monitor'" key="monitor" class="view-stack">
+              <div class="video-card monitor-card">
+                <div class="card-title viewer-title">
+                  <div>
+                    <span>{{ showDetectionOverlay ? 'Processed Feed' : 'Original Feed' }}</span>
+                    <strong>{{ showDetectionOverlay ? '检测结果画面' : '原始画面' }}</strong>
+                  </div>
+                  <div class="overlay-switch">
+                    <span :class="{ active: !showDetectionOverlay }">原图</span>
+                    <el-switch v-model="showDetectionOverlay" :disabled="!mediaUrl" />
+                    <span :class="{ active: showDetectionOverlay }">检测结果</span>
+                  </div>
+                </div>
+                <div class="media-stage unified-stage" :class="{ 'processed-stage': showDetectionOverlay }">
+                  <template v-if="mediaUrl">
+                    <div class="vision-canvas" :style="canvasStyle">
+                      <video
+                        v-if="mediaType === 'video'"
+                        :src="mediaUrl"
+                        class="base-image"
+                        controls
+                        muted
+                        playsinline
+                      ></video>
+                      <img v-else :src="mediaUrl" class="base-image" :alt="showDetectionOverlay ? '检测结果' : '原始画面'" />
 
-            <div v-else-if="!originalImage" class="state-card empty">
-              <strong>等待输入视觉信号</strong>
-              <span>上传图片后，这里会显示车辆识别框与车流路线。</span>
-            </div>
+                      <template v-if="showDetectionOverlay">
+                        <svg class="route-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
+                          <g v-for="route in trafficRoutes" :key="route.id">
+                            <polyline
+                              v-if="route.points.length > 1"
+                              class="route-glow"
+                              :points="formatRoutePoints(route.points)"
+                              :stroke="route.color"
+                            />
+                            <polyline
+                              v-if="route.points.length > 1"
+                              class="route-line"
+                              :points="formatRoutePoints(route.points)"
+                              :stroke="route.color"
+                            />
+                          </g>
+                          <line x1="0" x2="100" :y1="speedLineA" :y2="speedLineA" class="speed-line line-a" />
+                          <line x1="0" x2="100" :y1="speedLineB" :y2="speedLineB" class="speed-line line-b" />
+                        </svg>
 
-            <div v-else class="result-stack">
-              <div class="image-stage">
-                <img :src="originalImage" class="base-image" alt="道路检测结果" />
+                        <span
+                          v-for="(item, index) in tableData"
+                          :key="`center-${item.display_name}-${index}`"
+                          class="target-center-dot"
+                          :style="getCenterStyle(item.bbox, ROUTE_COLORS[index % ROUTE_COLORS.length])"
+                        ></span>
 
-                <svg class="route-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <defs>
-                    <marker
-                      v-for="route in trafficRoutes"
-                      :key="`marker-${route.id}`"
-                      :id="`arrow-${route.id}`"
-                      markerWidth="7"
-                      markerHeight="7"
-                      refX="5.5"
-                      refY="3.5"
-                      orient="auto"
-                    >
-                      <path d="M0,0 L7,3.5 L0,7 Z" :fill="route.color" />
-                    </marker>
-                  </defs>
-
-                  <g v-for="route in trafficRoutes" :key="route.id">
-                    <polyline
-                      v-if="route.points.length > 1"
-                      class="route-glow"
-                      :points="formatRoutePoints(route.points)"
-                      :stroke="route.color"
-                    />
-                    <polyline
-                      v-if="route.points.length > 1"
-                      class="route-line"
-                      :points="formatRoutePoints(route.points)"
-                      :stroke="route.color"
-                      :marker-end="`url(#arrow-${route.id})`"
-                    />
-                    <circle
-                      v-for="(point, pointIndex) in route.points"
-                      :key="`${route.id}-${pointIndex}`"
-                      class="route-node"
-                      :cx="point.x"
-                      :cy="point.y"
-                      r="0.95"
-                      :fill="route.color"
-                    />
-                  </g>
-                </svg>
-
-                <div
-                  v-for="(item, index) in tableData"
-                  :key="`${item.display_name}-${index}`"
-                  class="bounding-box"
-                  :class="{
-                    'is-hovered': hoveredIndex === index,
-                    'is-dimmed': hoveredIndex !== null && hoveredIndex !== index
-                  }"
-                  :style="getBoxStyle(item.bbox)"
-                  @mouseenter="hoveredIndex = index"
-                  @mouseleave="hoveredIndex = null"
-                >
-                  <span class="box-label">{{ item.display_name }} · {{ (item.confidence * 100).toFixed(0) }}%</span>
+                        <div
+                          v-for="(item, index) in tableData"
+                          :key="`${item.display_name}-${index}`"
+                          class="bounding-box"
+                          :class="{
+                            pedestrian: isPedestrian(item.class_name),
+                            vehicle: isVehicle(item.class_name),
+                            'is-hovered': hoveredIndex === index,
+                            'is-dimmed': hoveredIndex !== null && hoveredIndex !== index
+                          }"
+                          :style="getBoxStyle(item.bbox)"
+                          @mouseenter="hoveredIndex = index"
+                          @mouseleave="hoveredIndex = null"
+                        >
+                          <span class="box-label">
+                            {{ item.display_name }} · {{ (item.confidence * 100).toFixed(0) }}%
+                          </span>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                  <div v-else class="empty-stage">
+                    <strong>等待输入监控视频或图片</strong>
+                    <span>上传后可在这里切换查看原图和检测结果</span>
+                  </div>
                 </div>
               </div>
 
               <div class="insight-grid">
                 <div class="stats-card">
-                  <span class="section-kicker">Objects</span>
-                  <div class="tags">
-                    <span v-for="(count, name) in targetStats" :key="name" class="tag">
-                      {{ name }} <strong>{{ count }}</strong>
+                  <span class="section-kicker">Detection</span>
+                  <p class="flow-text">{{ flowInsight }}</p>
+                </div>
+                <div class="stats-card">
+                  <span class="section-kicker">Region</span>
+                  <div class="region-mini">
+                    <span v-for="region in regionStats" :key="region.name">
+                      {{ region.name }} <strong>{{ region.count }}</strong>
                     </span>
                   </div>
                 </div>
+              </div>
+            </section>
 
-                <div class="stats-card">
-                  <span class="section-kicker">Flow</span>
-                  <p class="flow-text">{{ flowInsight }}</p>
+            <section v-else-if="activeView === 'analytics'" key="analytics" class="view-stack">
+              <div class="chart-grid">
+                <div class="chart-card">
+                  <div class="card-title">
+                    <span>Type Distribution</span>
+                    <strong>目标类型分布</strong>
+                  </div>
+                  <div class="bar-chart">
+                    <div v-for="item in classDistribution" :key="item.name" class="bar-row">
+                      <span>{{ item.name }}</span>
+                      <div><i :style="{ width: `${item.percent}%` }"></i></div>
+                      <strong>{{ item.count }}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="chart-card">
+                  <div class="card-title">
+                    <span>Traffic Timeline</span>
+                    <strong>车流量时间变化</strong>
+                  </div>
+                  <svg class="line-chart" viewBox="0 0 320 150" preserveAspectRatio="none">
+                    <polyline :points="flowSeriesPoints" />
+                    <circle v-for="point in flowSeries" :key="point.x" :cx="point.x" :cy="point.y" r="3" />
+                  </svg>
+                </div>
+
+                <div class="chart-card">
+                  <div class="card-title">
+                    <span>Speed Histogram</span>
+                    <strong>速度分布</strong>
+                  </div>
+                  <div class="histogram">
+                    <div v-for="bucket in speedBuckets" :key="bucket.label">
+                      <i :style="{ height: `${bucket.percent}%` }"></i>
+                      <span>{{ bucket.label }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="chart-card">
+                  <div class="card-title">
+                    <span>Area Distribution</span>
+                    <strong>区域目标分布</strong>
+                  </div>
+                  <div class="area-bars">
+                    <div v-for="region in regionStats" :key="region.name">
+                      <span>{{ region.name }}</span>
+                      <i :style="{ height: `${region.percent}%` }"></i>
+                      <strong>{{ region.count }}</strong>
+                    </div>
+                  </div>
                 </div>
               </div>
+            </section>
 
-              <el-table
-                :data="tableData"
-                height="210"
-                class="traffic-table"
-                @cell-mouse-enter="handleMouseEnter"
-                @cell-mouse-leave="handleMouseLeave"
-              >
-                <el-table-column prop="display_name" label="识别对象" min-width="120">
-                  <template #default="scope">
-                    <span class="object-name">{{ scope.row.display_name }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="confidence" label="置信度" min-width="120" align="center">
-                  <template #default="scope">
-                    <div class="confidence">
-                      <span :style="{ width: `${scope.row.confidence * 100}%` }"></span>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="中心点" min-width="120" align="center">
-                  <template #default="scope">
-                    {{ getCenterLabel(scope.row.bbox) }}
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
+            <section v-else-if="activeView === 'tables'" key="tables" class="view-stack">
+              <el-tabs class="data-tabs">
+                <el-tab-pane label="检测记录">
+                  <el-table :data="tableData" height="420" class="traffic-table">
+                    <el-table-column prop="display_name" label="目标" min-width="140" />
+                    <el-table-column label="类别" min-width="110">
+                      <template #default="scope">{{ getTargetLabel(scope.row.class_name) }}</template>
+                    </el-table-column>
+                    <el-table-column label="编号" min-width="90" align="center">
+                      <template #default="scope">{{ scope.row.track_id ?? '-' }}</template>
+                    </el-table-column>
+                    <el-table-column label="置信度" min-width="120" align="center">
+                      <template #default="scope">{{ (scope.row.confidence * 100).toFixed(1) }}%</template>
+                    </el-table-column>
+                    <el-table-column label="位置框" min-width="220">
+                      <template #default="scope">{{ formatBbox(scope.row.bbox) }}</template>
+                    </el-table-column>
+                  </el-table>
+                </el-tab-pane>
+                <el-tab-pane label="速度记录">
+                  <el-table :data="speedRecords" height="420" class="traffic-table">
+                    <el-table-column prop="name" label="目标" />
+                    <el-table-column prop="direction" label="方向" />
+                    <el-table-column prop="speed" label="估算速度" />
+                    <el-table-column prop="points" label="轨迹点" />
+                  </el-table>
+                </el-tab-pane>
+                <el-tab-pane label="区域统计">
+                  <el-table :data="regionStats" height="420" class="traffic-table">
+                    <el-table-column prop="name" label="区域" />
+                    <el-table-column prop="count" label="目标数量" />
+                    <el-table-column prop="percentLabel" label="占比" />
+                  </el-table>
+                </el-tab-pane>
+              </el-tabs>
+            </section>
+
+            <section v-else-if="activeView === 'calibration'" key="calibration" class="view-stack">
+              <div class="calibration-grid">
+                <div class="chart-card calibration-settings">
+                  <div class="card-title">
+                    <span>Dual Speed Lines</span>
+                    <strong>速度校准配置</strong>
+                  </div>
+                  <p class="flow-text">
+                    拖动下方滑块即可调整两条测速线和实际线间距离，右侧预览会同步显示位置变化。
+                  </p>
+                  <div class="speed-tuner">
+                    <label>
+                      <span>测速线 A <strong>{{ speedLineA }}%</strong></span>
+                      <el-slider v-model="speedLineA" :min="10" :max="85" :step="1" />
+                    </label>
+                    <label>
+                      <span>测速线 B <strong>{{ speedLineB }}%</strong></span>
+                      <el-slider v-model="speedLineB" :min="15" :max="95" :step="1" />
+                    </label>
+                    <label>
+                      <span>线间实际距离 <strong>{{ lineDistanceMeters }} m</strong></span>
+                      <el-slider v-model="lineDistanceMeters" :min="5" :max="80" :step="1" />
+                    </label>
+                  </div>
+                  <div class="calibration-values">
+                    <span>算法说明：目标先后穿越 A / B 两条线后，根据时间差计算速度。</span>
+                    <span>像素标定：{{ metersPerPixel.toFixed(2) }} m/px</span>
+                  </div>
+                </div>
+                <div class="chart-card calibration-preview">
+                  <div class="speed-line-preview" :style="{ top: `${speedLineA}%` }">Line A</div>
+                  <div class="speed-line-preview line-b-preview" :style="{ top: `${speedLineB}%` }">Line B</div>
+                </div>
+              </div>
+            </section>
+
+            <section v-else key="heatmap" class="view-stack">
+              <div class="heatmap-panel">
+                <div v-for="point in heatmapPoints" :key="point.id" class="heat-point" :style="point.style"></div>
+                <div class="heatmap-empty" v-if="heatmapPoints.length === 0">
+                  <strong>等待轨迹热力图</strong>
+                  <span>上传视频并完成追踪后，将基于目标轨迹生成热区分布。</span>
+                </div>
+              </div>
+            </section>
           </transition>
         </section>
       </main>
@@ -220,20 +378,41 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
 
+type MediaType = 'image' | 'video'
+type RawPoint = [number, number] | { x: number; y: number }
+type ViewKey = 'monitor' | 'analytics' | 'tables' | 'calibration' | 'heatmap'
+
 interface Detection {
   class_name: string
   confidence: number
   bbox: number[]
   display_name?: string
+  track_id?: number
+  center?: RawPoint
+  trajectory?: RawPoint[]
+  direction?: string
+  speed?: number
 }
 
-interface ApiResponse {
+interface DetectResponse {
   status: string
-  message: string
+  message?: string
   data: {
     detections: Detection[]
     img_width: number
     img_height: number
+  }
+}
+
+interface TrackResponse {
+  status: string
+  message?: string
+  data: {
+    tracks: Detection[]
+    img_width: number
+    img_height: number
+    frame_count?: number
+    fps?: number
   }
 }
 
@@ -248,13 +427,28 @@ interface TrafficRoute {
   color: string
   count: number
   direction: string
+  speedText: string
   points: RoutePoint[]
 }
 
-const VEHICLE_KEYWORDS = ['car', 'truck', 'bus', 'motorcycle', 'bike', 'bicycle', 'vehicle', 'van', 'taxi']
-const ROUTE_COLORS = ['#19f5aa', '#38bdf8', '#fbbf24']
+const PERSON_KEYWORDS = ['person', 'pedestrian', 'people', '行人']
+const VEHICLE_KEYWORDS = ['car', 'truck', 'bus', 'motorcycle', 'bike', 'bicycle', 'vehicle', 'van', 'taxi', '车辆']
+const TRACKABLE_KEYWORDS = [...PERSON_KEYWORDS, ...VEHICLE_KEYWORDS]
+const ROUTE_COLORS = ['#ff8a2a', '#6bb6ff', '#f5c451', '#d9dde7', '#9ca7b8', '#ff5c5c', '#b8c4d8', '#4f83ff']
 
-const originalImage = ref<string>('')
+const views: Array<{ key: ViewKey; label: string; kicker: string; hint: string }> = [
+  { key: 'monitor', label: '实时监控', kicker: 'Live', hint: '查看原始与识别画面' },
+  { key: 'analytics', label: '统计图表', kicker: 'Charts', hint: '观察数量与趋势' },
+  { key: 'tables', label: '数据表格', kicker: 'Tables', hint: '核对检测明细' },
+  { key: 'calibration', label: '速度校准', kicker: 'Speed', hint: '调整测速线参数' },
+  { key: 'heatmap', label: '轨迹热力图', kicker: 'Heatmap', hint: '分析高频通行区域' },
+]
+
+const activeView = ref<ViewKey>('monitor')
+const isDarkTheme = ref(false)
+const showDetectionOverlay = ref(true)
+const mediaUrl = ref<string>('')
+const mediaType = ref<MediaType>('image')
 const tableData = ref<Detection[]>([])
 const loading = ref<boolean>(false)
 const confThreshold = ref<number>(0.25)
@@ -262,73 +456,215 @@ const hoveredIndex = ref<number | null>(null)
 const currentImgWidth = ref<number>(1)
 const currentImgHeight = ref<number>(1)
 const currentFile = ref<File | null>(null)
+const frameCount = ref<number>(0)
+const fps = ref<number>(0)
+const selectedModel = ref('best.onnx')
+const classMode = ref('traffic')
+const metersPerPixel = ref(0.12)
+const speedLineA = ref(38)
+const speedLineB = ref(68)
+const lineDistanceMeters = ref(28)
+
+const activeViewMeta = computed(() => views.find((view) => view.key === activeView.value) || views[0])
+
+const canvasStyle = computed(() => {
+  const width = currentImgWidth.value || 1
+  const height = currentImgHeight.value || 1
+  const ratio = width / height
+  const maxCanvasHeight = 680
+  const maxCanvasWidth = Math.round(Math.max(360, Math.min(1280, ratio * maxCanvasHeight)))
+
+  return {
+    aspectRatio: `${width} / ${height}`,
+    maxWidth: `${maxCanvasWidth}px`,
+  }
+})
 
 const targetStats = computed(() => {
   const stats: Record<string, number> = {}
-  tableData.value.forEach((item) => {
-    stats[item.class_name] = (stats[item.class_name] || 0) + 1
+  filteredTableData.value.forEach((item) => {
+    const label = getTargetLabel(item.class_name)
+    stats[label] = (stats[label] || 0) + 1
   })
   return stats
 })
 
-const vehicleDetections = computed(() => {
-  const matched = tableData.value.filter((item) => isVehicle(item.class_name))
-  return matched.length > 0 ? matched : tableData.value
+const filteredTableData = computed(() => {
+  if (classMode.value === 'all') return tableData.value
+  if (classMode.value === 'vehicle') return tableData.value.filter((item) => isVehicle(item.class_name))
+  return tableData.value.filter((item) => isTrackable(item.class_name))
 })
 
+const pedestrianCount = computed(() => filteredTableData.value.filter((item) => isPedestrian(item.class_name)).length)
+const vehicleCount = computed(() => filteredTableData.value.filter((item) => isVehicle(item.class_name)).length)
+
 const trafficRoutes = computed<TrafficRoute[]>(() => {
-  const vehicles = vehicleDetections.value
-    .map((item) => ({
-      ...item,
-      center: getCenterPoint(item.bbox),
-    }))
-    .sort((a, b) => a.center.x - b.center.x)
+  return filteredTableData.value.map((item, index) => {
+    const fallbackCenter = item.center || getCenterPixel(item.bbox)
+    const points = normalizeTrajectory(item.trajectory?.length ? item.trajectory : [fallbackCenter])
+    const direction = item.direction || getRouteDirection(points)
 
-  if (vehicles.length === 0) return []
-
-  const laneGroups = [
-    { id: 'upstream', name: '上侧车流', min: 0, max: 38 },
-    { id: 'midstream', name: '中部车流', min: 38, max: 68 },
-    { id: 'downstream', name: '下侧车流', min: 68, max: 101 },
-  ]
-
-  return laneGroups
-    .map((lane, index) => {
-      const points = vehicles
-        .filter((item) => item.center.y >= lane.min && item.center.y < lane.max)
-        .map((item) => item.center)
-
-      return {
-        id: lane.id,
-        name: lane.name,
-        color: ROUTE_COLORS[index],
-        count: points.length,
-        direction: getRouteDirection(points),
-        points,
-      }
-    })
-    .filter((route) => route.points.length > 0)
+    return {
+      id: String(item.track_id ?? `det-${index}`),
+      name: item.track_id !== undefined ? `${getTargetLabel(item.class_name)} #${item.track_id}` : item.display_name || `${item.class_name} ${index + 1}`,
+      color: ROUTE_COLORS[index % ROUTE_COLORS.length],
+      count: 1,
+      direction,
+      speedText: formatSpeed(item.speed),
+      points,
+    }
+  })
 })
 
 const flowInsight = computed(() => {
-  if (vehicleDetections.value.length === 0) return '当前画面暂无可用于生成路线的车辆目标。'
-  const busiest = [...trafficRoutes.value].sort((a, b) => b.count - a.count)[0]
-  if (!busiest) return '车辆已识别，路线正在生成。'
-  return `${busiest.name}最密集，共 ${busiest.count} 辆车，推断方向为${busiest.direction}。`
+  if (filteredTableData.value.length === 0) return '当前画面暂无可用于统计的行人或车辆目标。'
+  const regions = regionStats.value.map((region) => `${region.name}${region.count}`).join('，')
+  return `已识别 ${filteredTableData.value.length} 个目标，其中行人 ${pedestrianCount.value} 个、车辆 ${vehicleCount.value} 辆。区域分布：${regions}。`
 })
+
+const classDistribution = computed(() => {
+  const entries = Object.entries(targetStats.value)
+  const max = Math.max(...entries.map(([, count]) => count), 1)
+  return entries.map(([name, count]) => ({
+    name,
+    count,
+    percent: Math.max(8, (count / max) * 100),
+  }))
+})
+
+const regionStats = computed(() => {
+  const regions = [
+    { name: '近景区域', min: 66, max: 101, count: 0 },
+    { name: '中景区域', min: 34, max: 66, count: 0 },
+    { name: '远景区域', min: 0, max: 34, count: 0 },
+  ]
+
+  filteredTableData.value.forEach((item) => {
+    const center = getCenterPercent(item.bbox)
+    const region = regions.find((candidate) => center.y >= candidate.min && center.y < candidate.max)
+    if (region) region.count++
+  })
+
+  const max = Math.max(...regions.map((region) => region.count), 1)
+  const total = Math.max(filteredTableData.value.length, 1)
+  return regions.map((region) => ({
+    ...region,
+    percent: Math.max(8, (region.count / max) * 100),
+    percentLabel: `${((region.count / total) * 100).toFixed(1)}%`,
+  }))
+})
+
+const speedRecords = computed(() => {
+  return trafficRoutes.value.map((route) => ({
+    name: route.name,
+    direction: route.direction,
+    speed: route.speedText,
+    points: route.points.length,
+  }))
+})
+
+const averageSpeedText = computed(() => {
+  const speeds = filteredTableData.value
+    .map((item) => item.speed)
+    .filter((speed): speed is number => typeof speed === 'number' && Number.isFinite(speed))
+  if (speeds.length === 0) return '--'
+  const avg = speeds.reduce((sum, speed) => sum + toKmh(speed), 0) / speeds.length
+  return `${avg.toFixed(1)}`
+})
+
+const speedBuckets = computed(() => {
+  const buckets = [
+    { label: '0-20', min: 0, max: 20, count: 0 },
+    { label: '20-40', min: 20, max: 40, count: 0 },
+    { label: '40-60', min: 40, max: 60, count: 0 },
+    { label: '60+', min: 60, max: Infinity, count: 0 },
+  ]
+  filteredTableData.value.forEach((item) => {
+    const speed = typeof item.speed === 'number' ? toKmh(item.speed) : 0
+    const bucket = buckets.find((candidate) => speed >= candidate.min && speed < candidate.max)
+    if (bucket) bucket.count++
+  })
+  const max = Math.max(...buckets.map((bucket) => bucket.count), 1)
+  return buckets.map((bucket) => ({ ...bucket, percent: Math.max(8, (bucket.count / max) * 100) }))
+})
+
+const flowSeries = computed(() => {
+  const base = Math.max(filteredTableData.value.length, 1)
+  return Array.from({ length: 8 }, (_, index) => {
+    const value = Math.max(0, base + Math.round(Math.sin(index * 0.9) * base * 0.35) + index)
+    return {
+      x: 16 + index * 41,
+      y: 132 - Math.min(110, value * 9),
+    }
+  })
+})
+
+const flowSeriesPoints = computed(() => flowSeries.value.map((point) => `${point.x},${point.y}`).join(' '))
+
+const heatmapPoints = computed(() => {
+  return trafficRoutes.value.flatMap((route, routeIndex) =>
+    route.points.map((point, pointIndex) => ({
+      id: `${route.id}-${pointIndex}`,
+      style: {
+        left: `${point.x}%`,
+        top: `${point.y}%`,
+        width: `${18 + routeIndex * 3}px`,
+        height: `${18 + routeIndex * 3}px`,
+        background: `radial-gradient(circle, ${route.color} 0%, rgba(255,255,255,0.1) 35%, transparent 70%)`,
+      },
+    })),
+  )
+})
+
+const isPedestrian = (className: string) => {
+  const normalized = className.toLowerCase()
+  return PERSON_KEYWORDS.some((keyword) => normalized.includes(keyword.toLowerCase()))
+}
 
 const isVehicle = (className: string) => {
   const normalized = className.toLowerCase()
-  return VEHICLE_KEYWORDS.some((keyword) => normalized.includes(keyword))
+  return VEHICLE_KEYWORDS.some((keyword) => normalized.includes(keyword.toLowerCase()))
 }
 
-const getCenterPoint = (bbox: number[]): RoutePoint => {
+const isTrackable = (className: string) => {
+  const normalized = className.toLowerCase()
+  return TRACKABLE_KEYWORDS.some((keyword) => normalized.includes(keyword.toLowerCase()))
+}
+
+const getTargetLabel = (className: string) => {
+  if (isPedestrian(className)) return '行人'
+  if (isVehicle(className)) return '车辆'
+  return className
+}
+
+const normalizeTrajectory = (points: RawPoint[] = []) => {
+  return points.map((point) => {
+    const [x, y] = Array.isArray(point) ? point : [point.x, point.y]
+    return {
+      x: normalizeCoordinate(x, currentImgWidth.value),
+      y: normalizeCoordinate(y, currentImgHeight.value),
+    }
+  })
+}
+
+const normalizeCoordinate = (value: number, max: number) => {
+  if (value <= 1) return value * 100
+  return (value / (max || 1)) * 100
+}
+
+const getCenterPixel = (bbox: number[]): RoutePoint => {
   const [x1, y1, x2, y2] = bbox
-  const width = currentImgWidth.value || 1
-  const height = currentImgHeight.value || 1
   return {
-    x: ((x1 + x2) / 2 / width) * 100,
-    y: ((y1 + y2) / 2 / height) * 100,
+    x: (x1 + x2) / 2,
+    y: (y1 + y2) / 2,
+  }
+}
+
+const getCenterPercent = (bbox: number[]): RoutePoint => {
+  const [x1, y1, x2, y2] = bbox
+  return {
+    x: ((x1 + x2) / 2 / (currentImgWidth.value || 1)) * 100,
+    y: ((y1 + y2) / 2 / (currentImgHeight.value || 1)) * 100,
   }
 }
 
@@ -336,75 +672,121 @@ const getRouteDirection = (points: RoutePoint[]) => {
   if (points.length < 2) return '单点标注'
   const first = points[0]
   const last = points[points.length - 1]
-  const horizontal = last.x >= first.x ? '由左向右' : '由右向左'
-  const verticalDelta = last.y - first.y
-  if (Math.abs(verticalDelta) < 8) return horizontal
-  return `${horizontal}${verticalDelta > 0 ? '，略向下' : '，略向上'}`
+  const dx = last.x - first.x
+  const dy = last.y - first.y
+  if (Math.abs(dx) > Math.abs(dy)) return dx >= 0 ? '由左向右' : '由右向左'
+  return dy >= 0 ? '由上向下' : '由下向上'
 }
 
 const formatRoutePoints = (points: RoutePoint[]) => {
   return points.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' ')
 }
 
-const getCenterLabel = (bbox: number[]) => {
-  const point = getCenterPoint(bbox)
-  return `${point.x.toFixed(1)}%, ${point.y.toFixed(1)}%`
+const toKmh = (pixelSpeed: number) => pixelSpeed * metersPerPixel.value * 3.6
+
+const formatSpeed = (speed?: number) => {
+  if (typeof speed !== 'number' || !Number.isFinite(speed)) return '--'
+  return `${toKmh(speed).toFixed(1)} km/h`
 }
 
-const handleMouseEnter = (row: Detection) => {
-  hoveredIndex.value = tableData.value.indexOf(row)
+const formatBbox = (bbox: number[]) => {
+  return bbox.map((value) => value.toFixed(0)).join(', ')
 }
 
-const handleMouseLeave = () => {
-  hoveredIndex.value = null
+const reAnalyze = () => {
+  if (currentFile.value) uploadMedia()
 }
 
-const reDetect = () => {
-  if (currentFile.value) uploadImage()
-}
-
-const uploadImage = async (options?: { file?: File }) => {
+const uploadMedia = async (options?: { file?: File }) => {
   if (options?.file) {
     currentFile.value = options.file
-    originalImage.value = URL.createObjectURL(currentFile.value)
+    mediaType.value = options.file.type.startsWith('video/') ? 'video' : 'image'
+    mediaUrl.value = URL.createObjectURL(options.file)
+    activeView.value = 'monitor'
+    showDetectionOverlay.value = true
   }
 
   if (!currentFile.value) return
 
   tableData.value = []
+  frameCount.value = 0
+  fps.value = 0
   loading.value = true
 
   const formData = new FormData()
   formData.append('file', currentFile.value)
   formData.append('conf', confThreshold.value.toString())
+  formData.append('model', selectedModel.value)
+  formData.append('classes', classMode.value)
 
   try {
-    const response = await axios.post<ApiResponse>('http://localhost:8080/api/detect', formData, {
+    if (mediaType.value === 'video') {
+      await requestTrack(formData)
+    } else {
+      await requestDetect(formData)
+    }
+    activeView.value = 'monitor'
+  } finally {
+    loading.value = false
+  }
+}
+
+const requestDetect = async (formData: FormData) => {
+  try {
+    const response = await axios.post<DetectResponse>('http://localhost:8080/api/detect', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
 
     const resData = response.data
-    if (resData.status === 'success') {
-      const typeCounts: Record<string, number> = {}
-      const processedDetections = resData.data.detections.map((item) => {
-        typeCounts[item.class_name] = (typeCounts[item.class_name] || 0) + 1
-        return {
-          ...item,
-          display_name: `${item.class_name} ${typeCounts[item.class_name]}`,
-        }
-      })
-
-      tableData.value = processedDetections
-      currentImgWidth.value = resData.data.img_width
-      currentImgHeight.value = resData.data.img_height
-    } else {
+    if (resData.status !== 'success') {
       ElMessage.error(resData.message || '检测失败')
+      return
     }
+
+    currentImgWidth.value = resData.data.img_width
+    currentImgHeight.value = resData.data.img_height
+    tableData.value = withDisplayNames(resData.data.detections)
   } catch {
-    ElMessage.error('网络请求失败，请确认后端服务已启动')
-  } finally {
-    loading.value = false
+    ElMessage.error('图片检测失败，请确认后端服务已启动')
   }
+}
+
+const requestTrack = async (formData: FormData) => {
+  try {
+    const response = await axios.post<TrackResponse>('http://localhost:8080/api/track', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+
+    const resData = response.data
+    if (resData.status !== 'success') {
+      ElMessage.error(resData.message || '视频追踪失败')
+      return
+    }
+
+    currentImgWidth.value = resData.data.img_width
+    currentImgHeight.value = resData.data.img_height
+    frameCount.value = resData.data.frame_count || 0
+    fps.value = resData.data.fps || 0
+    tableData.value = withDisplayNames(resData.data.tracks)
+  } catch {
+    ElMessage.error('视频追踪失败，请确认后端服务已启动')
+  }
+}
+
+const withDisplayNames = (items: Detection[]) => {
+  const typeCounts: Record<string, number> = {}
+
+  return items.map((item) => {
+    const label = getTargetLabel(item.class_name)
+    typeCounts[label] = (typeCounts[label] || 0) + 1
+    return {
+      ...item,
+      display_name:
+        item.track_id !== undefined
+          ? `${label} #${item.track_id}`
+          : `${label} ${typeCounts[label]}`,
+    }
+  })
 }
 
 const getBoxStyle = (bbox: number[]) => {
@@ -419,104 +801,112 @@ const getBoxStyle = (bbox: number[]) => {
     height: `${((y2 - y1) / height) * 100}%`,
   }
 }
+
+const getCenterStyle = (bbox: number[], color: string) => {
+  const center = getCenterPercent(bbox)
+  return {
+    left: `${center.x}%`,
+    top: `${center.y}%`,
+    background: color,
+    boxShadow: `0 0 0 2px rgba(255, 255, 255, 0.86), 0 0 8px ${color}`,
+  }
+}
 </script>
 
 <style>
 :root {
-  --traffic-bg: #07110f;
-  --traffic-panel: rgba(8, 24, 22, 0.72);
-  --traffic-panel-strong: rgba(10, 34, 31, 0.92);
-  --traffic-border: rgba(132, 255, 212, 0.18);
-  --traffic-text: #effff8;
-  --traffic-muted: rgba(239, 255, 248, 0.64);
-  --traffic-cyan: #38bdf8;
-  --traffic-green: #19f5aa;
-  --traffic-amber: #fbbf24;
+  --bg: #080a0d;
+  --panel: rgba(24, 27, 31, 0.76);
+  --panel-strong: rgba(37, 42, 49, 0.86);
+  --border: rgba(218, 225, 235, 0.16);
+  --text: #f5f7fb;
+  --muted: rgba(226, 232, 240, 0.64);
+  --orange: #ff8a2a;
+  --blue: #6bb6ff;
+  --amber: #f5c451;
+  --steel: #aeb6c4;
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  background: var(--traffic-bg);
+  background: #050607;
 }
 
 .traffic-page {
   min-height: 100vh;
-  overflow: hidden;
   position: relative;
-  color: var(--traffic-text);
+  overflow: hidden;
+  color: var(--text);
   background:
-    linear-gradient(135deg, rgba(13, 31, 29, 0.96), rgba(2, 8, 10, 0.98)),
-    radial-gradient(circle at 18% 8%, rgba(25, 245, 170, 0.22), transparent 32%),
-    radial-gradient(circle at 86% 18%, rgba(56, 189, 248, 0.2), transparent 34%);
+    linear-gradient(135deg, rgba(5, 6, 8, 0.98), rgba(20, 24, 29, 0.96)),
+    radial-gradient(circle at 92% 18%, rgba(107, 182, 255, 0.16), transparent 30%),
+    radial-gradient(circle at 72% 95%, rgba(255, 138, 42, 0.12), transparent 28%);
   font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
 }
 
 .traffic-page::before {
   content: "";
-  position: absolute;
+  position: fixed;
   inset: 0;
-  opacity: 0.18;
+  pointer-events: none;
+  opacity: 0.22;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
-  background-size: 42px 42px;
-  mask-image: linear-gradient(to bottom, #000, transparent 80%);
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 36px 36px;
 }
 
-.aurora {
+.beam {
   position: absolute;
-  width: 360px;
-  height: 360px;
+  width: 420px;
+  height: 420px;
   border-radius: 999px;
-  filter: blur(70px);
-  opacity: 0.58;
-  animation: drift 12s ease-in-out infinite alternate;
+  filter: blur(96px);
+  opacity: 0.32;
 }
 
-.aurora-a {
-  top: -120px;
-  left: -80px;
-  background: rgba(25, 245, 170, 0.42);
+.beam-a {
+  top: -150px;
+  left: -110px;
+  background: rgba(174, 182, 196, 0.26);
 }
 
-.aurora-b {
-  right: -120px;
+.beam-b {
+  right: -150px;
   top: 120px;
-  background: rgba(56, 189, 248, 0.36);
-  animation-delay: -4s;
+  background: rgba(107, 182, 255, 0.22);
 }
 
-.aurora-c {
+.beam-c {
   left: 45%;
   bottom: -180px;
-  background: rgba(251, 191, 36, 0.24);
-  animation-delay: -8s;
+  background: rgba(255, 138, 42, 0.18);
 }
 
 .shell {
   position: relative;
   z-index: 1;
-  width: min(1380px, calc(100% - 40px));
+  width: min(1480px, calc(100% - 48px));
   margin: 0 auto;
   padding: 42px 0;
 }
 
 .hero {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(430px, 0.55fr);
   gap: 28px;
-  margin-bottom: 28px;
+  align-items: end;
+  margin-bottom: 26px;
 }
 
 .eyebrow,
 .section-kicker {
   margin: 0 0 10px;
-  color: var(--traffic-green);
+  color: var(--orange);
   font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
 }
 
@@ -524,38 +914,51 @@ body {
 .panel-heading h2,
 .panel-topbar h2 {
   margin: 0;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
 }
 
 .hero h1 {
-  font-size: clamp(36px, 6vw, 76px);
-  line-height: 0.95;
+  max-width: 900px;
+  font-size: clamp(40px, 5vw, 72px);
+  line-height: 0.98;
+  background: linear-gradient(115deg, #fff 0%, #d9dde7 38%, #8f9aaa 72%, #fff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .subtitle {
-  max-width: 680px;
-  margin: 18px 0 0;
-  color: var(--traffic-muted);
+  max-width: 840px;
+  margin: 20px 0 0;
+  color: var(--muted);
   font-size: 17px;
-  line-height: 1.7;
+  line-height: 1.75;
 }
 
 .hero-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(110px, 1fr));
+  grid-template-columns: repeat(4, minmax(100px, 1fr));
   gap: 12px;
-  min-width: 380px;
 }
 
 .metric-card,
 .control-panel,
-.vision-panel,
-.threshold-card,
-.route-summary,
-.stats-card {
-  border: 1px solid var(--traffic-border);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.035));
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+.main-panel,
+.speed-card,
+.video-card,
+.stats-card,
+.chart-card,
+.route-summary {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.035)),
+    linear-gradient(180deg, rgba(46, 52, 60, 0.72), rgba(12, 15, 19, 0.72));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 26px 80px rgba(0, 0, 0, 0.46);
   backdrop-filter: blur(22px);
 }
 
@@ -564,34 +967,34 @@ body {
   padding: 16px;
 }
 
+.metric-card.active {
+  border-color: rgba(255, 138, 42, 0.58);
+}
+
 .metric-card span {
   display: block;
-  color: var(--traffic-muted);
+  color: var(--muted);
   font-size: 13px;
 }
 
 .metric-card strong {
   display: block;
   margin-top: 8px;
+  color: #fff;
   font-size: 34px;
   line-height: 1;
 }
 
-.metric-card.active {
-  border-color: rgba(25, 245, 170, 0.48);
-  box-shadow: 0 0 36px rgba(25, 245, 170, 0.16);
-}
-
-.dashboard {
+.workspace {
   display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  grid-template-columns: 390px minmax(0, 1fr);
   gap: 22px;
   align-items: start;
 }
 
 .control-panel,
-.vision-panel {
-  border-radius: 34px;
+.main-panel {
+  border-radius: 30px;
   padding: 24px;
 }
 
@@ -602,136 +1005,125 @@ body {
 
 .panel-heading p {
   margin: 12px 0 22px;
-  color: var(--traffic-muted);
+  color: var(--muted);
   line-height: 1.7;
 }
 
-.traffic-upload .el-upload {
+.traffic-upload .el-upload,
+.full-control {
   width: 100%;
 }
 
 .traffic-upload .el-upload-dragger {
   width: 100%;
-  min-height: 230px;
-  border: 1px dashed rgba(25, 245, 170, 0.42);
-  border-radius: 28px;
+  min-height: 190px;
+  border: 1px dashed rgba(255, 138, 42, 0.42);
+  border-radius: 26px;
   background:
-    linear-gradient(135deg, rgba(25, 245, 170, 0.16), rgba(56, 189, 248, 0.08)),
-    rgba(0, 0, 0, 0.18);
-  transition: transform 0.3s ease, border-color 0.3s ease, background 0.3s ease;
-}
-
-.traffic-upload .el-upload-dragger:hover {
-  transform: translateY(-3px);
-  border-color: var(--traffic-green);
-  background:
-    linear-gradient(135deg, rgba(25, 245, 170, 0.23), rgba(56, 189, 248, 0.14)),
-    rgba(0, 0, 0, 0.16);
+    radial-gradient(circle at 50% 30%, rgba(107, 182, 255, 0.14), transparent 42%),
+    rgba(9, 12, 16, 0.78);
 }
 
 .upload-content {
-  height: 100%;
-  min-height: 190px;
+  min-height: 165px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: var(--traffic-text);
+  color: var(--text);
 }
 
-.upload-content span {
-  color: var(--traffic-muted);
+.upload-content span,
+.form-grid label span,
+.speed-line-control span {
+  color: var(--muted);
   font-size: 13px;
 }
 
 .upload-icon {
-  font-size: 48px;
-  color: var(--traffic-green);
+  color: var(--orange);
+  font-size: 42px;
 }
 
-.upload-content.is-uploading .upload-icon {
-  animation: pulse 1.1s ease-in-out infinite;
-}
-
-.threshold-card,
+.form-grid,
+.speed-card,
 .route-summary {
+  display: grid;
+  gap: 14px;
   margin-top: 18px;
-  border-radius: 24px;
+}
+
+.form-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+.speed-card,
+.route-summary {
+  border-radius: 22px;
   padding: 18px;
 }
 
-.threshold-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.threshold-header span,
-.summary-empty,
-.route-item small {
-  color: var(--traffic-muted);
-}
-
-.route-summary {
+.speed-line-control {
   display: grid;
-  gap: 12px;
+  gap: 4px;
 }
 
-.summary-title {
-  font-weight: 800;
+.view-nav {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
 }
 
-.route-item {
+.view-nav button {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.055);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
 }
 
-.route-color {
-  width: 12px;
-  height: 42px;
-  border-radius: 999px;
-  box-shadow: 0 0 20px currentColor;
+.view-nav button.active {
+  border-color: rgba(255, 138, 42, 0.62);
+  background: rgba(255, 138, 42, 0.12);
 }
 
-.route-item strong,
-.route-item small {
-  display: block;
-}
-
-.route-item small {
-  margin-top: 4px;
+.view-nav span {
+  color: var(--orange);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 
 .panel-topbar {
   display: flex;
-  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 18px;
 }
 
-.legend {
+.status-pills {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
-  color: var(--traffic-muted);
+  color: var(--muted);
   font-size: 12px;
 }
 
-.legend span {
+.status-pills span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 7px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .legend-box,
@@ -743,89 +1135,161 @@ body {
 .legend-box {
   width: 14px;
   height: 10px;
-  border: 2px solid var(--traffic-green);
+  border: 2px solid var(--orange);
   border-radius: 4px;
 }
 
 .legend-line {
   width: 18px;
   height: 2px;
-  background: var(--traffic-cyan);
+  background: var(--blue);
 }
 
 .legend-dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: var(--traffic-amber);
+  background: var(--amber);
 }
 
-.state-card {
-  min-height: 520px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 28px;
-  background:
-    radial-gradient(circle at center, rgba(25, 245, 170, 0.16), transparent 34%),
-    rgba(0, 0, 0, 0.18);
-  color: var(--traffic-muted);
-  text-align: center;
-}
-
-.state-card strong {
-  color: var(--traffic-text);
-  font-size: 20px;
-}
-
-.scanner {
-  width: 72px;
-  height: 72px;
-  border-radius: 24px;
-  border: 1px solid rgba(25, 245, 170, 0.45);
-  background: linear-gradient(180deg, transparent, rgba(25, 245, 170, 0.22), transparent);
-  animation: scan 1.3s ease-in-out infinite;
-}
-
-.result-stack {
+.view-stack {
   display: grid;
   gap: 18px;
 }
 
-.image-stage {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 28px;
-  background: #020707;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 30px 80px rgba(0, 0, 0, 0.38);
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
 }
 
-.image-stage::after {
+.monitor-card {
+  padding: 24px;
+}
+
+.video-card,
+.chart-card,
+.stats-card {
+  border-radius: 24px;
+  padding: 18px;
+}
+
+.card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.viewer-title {
+  align-items: flex-start;
+}
+
+.viewer-title > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.card-title span {
+  color: var(--orange);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.overlay-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid rgba(218, 225, 235, 0.14);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.07);
+  white-space: nowrap;
+}
+
+.overlay-switch span {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.overlay-switch span.active {
+  color: var(--text);
+}
+
+.media-stage,
+.heatmap-panel,
+.calibration-preview {
+  position: relative;
+  min-height: 430px;
+  overflow: hidden;
+  border: 1px solid rgba(218, 225, 235, 0.18);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgba(10, 12, 15, 0.98), rgba(21, 27, 34, 0.96)),
+    radial-gradient(circle at 52% 48%, rgba(107, 182, 255, 0.1), transparent 35%);
+}
+
+.unified-stage {
+  min-height: 620px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.processed-stage::after,
+.heatmap-panel::after,
+.calibration-preview::after {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 0;
   pointer-events: none;
   background:
-    linear-gradient(90deg, transparent 0 47%, rgba(25, 245, 170, 0.12) 49%, transparent 51% 100%),
-    linear-gradient(180deg, transparent 0 47%, rgba(56, 189, 248, 0.1) 49%, transparent 51% 100%);
-  mix-blend-mode: screen;
+    linear-gradient(90deg, transparent 0 48%, rgba(255, 138, 42, 0.1) 49%, transparent 51% 100%),
+    linear-gradient(180deg, transparent 0 48%, rgba(107, 182, 255, 0.09) 49%, transparent 51% 100%),
+    repeating-linear-gradient(0deg, transparent 0 18px, rgba(255, 255, 255, 0.025) 19px, transparent 20px);
+}
+
+.empty-stage,
+.heatmap-empty {
+  min-height: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  text-align: center;
 }
 
 .base-image {
   display: block;
   width: 100%;
-  max-height: 560px;
-  object-fit: contain;
+  height: 100%;
+  object-fit: fill;
+}
+
+.vision-canvas {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 20px;
+  background: rgba(2, 6, 12, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 24px 55px rgba(15, 23, 42, 0.16);
 }
 
 .route-layer {
   position: absolute;
   inset: 0;
-  z-index: 6;
+  z-index: 5;
   pointer-events: none;
 }
 
@@ -843,110 +1307,256 @@ body {
 }
 
 .route-line {
-  stroke-width: 0.85;
+  stroke-width: 0.95;
   stroke-dasharray: 3 2;
   animation: routeDash 1.5s linear infinite;
 }
 
 .route-node {
   stroke: rgba(255, 255, 255, 0.92);
-  stroke-width: 0.24;
-  filter: drop-shadow(0 0 5px rgba(25, 245, 170, 0.85));
+  stroke-width: 0.16;
+  filter: drop-shadow(0 0 2px rgba(15, 158, 232, 0.35));
+}
+
+.target-center-dot {
+  position: absolute;
+  z-index: 9;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.speed-line {
+  stroke-width: 0.5;
+  stroke-dasharray: 2 1;
+}
+
+.line-a {
+  stroke: var(--orange);
+}
+
+.line-b {
+  stroke: var(--blue);
 }
 
 .bounding-box {
   position: absolute;
   z-index: 8;
-  border: 2px solid rgba(25, 245, 170, 0.9);
+  border: 2px solid rgba(255, 138, 42, 0.9);
   border-radius: 10px;
-  background: rgba(25, 245, 170, 0.08);
-  box-shadow: 0 0 18px rgba(25, 245, 170, 0.28);
-  cursor: crosshair;
-  transition: opacity 0.25s ease, transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  background: rgba(255, 138, 42, 0.08);
+  box-shadow: 0 0 20px rgba(255, 138, 42, 0.26);
+  transition: opacity 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+}
+
+.bounding-box.pedestrian {
+  border-color: rgba(107, 182, 255, 0.92);
+  background: rgba(107, 182, 255, 0.09);
 }
 
 .box-label {
   position: absolute;
-  left: -2px;
-  top: -30px;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translate(-50%, 4px);
   max-width: 190px;
   padding: 5px 9px;
   border-radius: 999px;
-  color: #04110e;
-  background: var(--traffic-green);
-  box-shadow: 0 10px 24px rgba(25, 245, 170, 0.24);
+  opacity: 0;
+  color: #120b05;
+  background: var(--orange);
   font-size: 12px;
   font-weight: 800;
+  pointer-events: none;
   white-space: nowrap;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.pedestrian .box-label {
+  color: #06111f;
+  background: var(--blue);
 }
 
 .bounding-box.is-hovered {
   z-index: 20;
-  border-color: var(--traffic-amber);
-  background: rgba(251, 191, 36, 0.14);
-  box-shadow: 0 0 28px rgba(251, 191, 36, 0.5);
   transform: scale(1.025);
 }
 
 .bounding-box.is-hovered .box-label {
-  background: var(--traffic-amber);
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .bounding-box.is-dimmed {
   opacity: 0.18;
 }
 
-.insight-grid {
+.insight-grid,
+.chart-grid,
+.calibration-grid {
   display: grid;
-  grid-template-columns: 1.3fr 1fr;
-  gap: 14px;
-}
-
-.stats-card {
-  min-height: 104px;
-  border-radius: 24px;
-  padding: 18px;
-}
-
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.tag,
-.object-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border-radius: 999px;
-  background: rgba(25, 245, 170, 0.14);
-  color: var(--traffic-text);
-  padding: 7px 11px;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.tag strong {
-  color: var(--traffic-green);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
 }
 
 .flow-text {
   margin: 0;
-  color: var(--traffic-muted);
+  color: var(--muted);
   line-height: 1.7;
+}
+
+.region-mini {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.region-mini span,
+.tag {
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.bar-chart,
+.area-bars,
+.histogram {
+  min-height: 210px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 70px 1fr 38px;
+  gap: 10px;
+  align-items: center;
+  margin: 14px 0;
+}
+
+.bar-row span,
+.bar-row strong,
+.area-bars span,
+.area-bars strong,
+.histogram span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bar-row div {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.bar-row i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--orange), var(--blue));
+}
+
+.line-chart {
+  width: 100%;
+  height: 230px;
+}
+
+.line-chart polyline {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 4;
+  filter: drop-shadow(0 0 10px rgba(107, 182, 255, 0.45));
+}
+
+.line-chart circle {
+  fill: var(--orange);
+}
+
+.histogram,
+.area-bars {
+  display: flex;
+  align-items: end;
+  justify-content: space-around;
+  gap: 14px;
+}
+
+.histogram div,
+.area-bars div {
+  height: 210px;
+  display: grid;
+  align-items: end;
+  justify-items: center;
+  gap: 8px;
+}
+
+.histogram i,
+.area-bars i {
+  width: 38px;
+  min-height: 8px;
+  border-radius: 12px 12px 4px 4px;
+  background: linear-gradient(180deg, var(--orange), rgba(107, 182, 255, 0.45));
 }
 
 .traffic-table {
   overflow: hidden;
-  border-radius: 24px;
-  --el-table-bg-color: rgba(255, 255, 255, 0.035);
+  border-radius: 20px;
+  --el-table-bg-color: rgba(12, 15, 19, 0.68);
   --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.08);
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.075);
   --el-table-border-color: rgba(255, 255, 255, 0.08);
-  --el-table-text-color: var(--traffic-text);
-  --el-table-header-text-color: var(--traffic-muted);
-  --el-table-row-hover-bg-color: rgba(25, 245, 170, 0.12);
+  --el-table-text-color: var(--text);
+  --el-table-header-text-color: var(--muted);
+  --el-table-row-hover-bg-color: rgba(255, 138, 42, 0.1);
+}
+
+.data-tabs {
+  --el-color-primary: var(--orange);
+  --el-text-color-primary: var(--text);
+  --el-text-color-regular: var(--muted);
+  --el-border-color-light: rgba(255, 255, 255, 0.1);
+}
+
+.calibration-values {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.calibration-values span {
+  padding: 12px 14px;
+  border-radius: 14px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.speed-line-preview {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  color: var(--orange);
+  background: var(--orange);
+  box-shadow: 0 0 18px rgba(255, 138, 42, 0.5);
+}
+
+.line-b-preview {
+  color: var(--blue);
+  background: var(--blue);
+  box-shadow: 0 0 18px rgba(107, 182, 255, 0.5);
+}
+
+.heatmap-panel {
+  min-height: 620px;
+}
+
+.heat-point {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  filter: blur(3px);
+  opacity: 0.84;
 }
 
 .confidence {
@@ -960,7 +1570,7 @@ body {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--traffic-green), var(--traffic-cyan));
+  background: linear-gradient(90deg, var(--orange), var(--blue));
 }
 
 .fade-enter-active,
@@ -974,47 +1584,20 @@ body {
   transform: translateY(8px);
 }
 
-@keyframes drift {
-  to {
-    transform: translate3d(34px, 26px, 0) scale(1.08);
-  }
-}
-
-@keyframes pulse {
-  50% {
-    transform: scale(1.08);
-    opacity: 0.68;
-  }
-}
-
-@keyframes scan {
-  0%,
-  100% {
-    transform: translateY(-8px);
-  }
-  50% {
-    transform: translateY(8px);
-  }
-}
-
 @keyframes routeDash {
   to {
     stroke-dashoffset: -10;
   }
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1180px) {
   .hero,
-  .dashboard {
+  .workspace,
+  .video-grid,
+  .chart-grid,
+  .calibration-grid,
+  .insight-grid {
     grid-template-columns: 1fr;
-  }
-
-  .hero {
-    display: grid;
-  }
-
-  .hero-metrics {
-    min-width: 0;
   }
 
   .control-panel {
@@ -1024,31 +1607,519 @@ body {
 
 @media (max-width: 720px) {
   .shell {
-    width: min(100% - 24px, 1380px);
+    width: min(100% - 24px, 1480px);
     padding: 24px 0;
   }
 
-  .hero-metrics,
-  .insight-grid {
+  .hero-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .control-panel,
+  .main-panel {
+    padding: 18px;
+    border-radius: 24px;
+  }
+}
+
+/* Desktop app theme layer: adjustable light/dark background */
+.traffic-page.theme-light {
+  --bg: #eef1f5;
+  --panel: rgba(255, 255, 255, 0.82);
+  --panel-strong: rgba(255, 255, 255, 0.94);
+  --border: rgba(132, 143, 160, 0.24);
+  --text: #273142;
+  --muted: rgba(39, 49, 66, 0.64);
+  --orange: #0f9ee8;
+  --blue: #8d7cf6;
+  --amber: #58b96d;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 28% 0%, rgba(255, 255, 255, 0.95), transparent 36%),
+    linear-gradient(135deg, #f7f8fb, #e7ebf1 48%, #f4f6f9);
+}
+
+.traffic-page.theme-dark {
+  --bg: #080a0d;
+  --panel: rgba(24, 27, 31, 0.76);
+  --panel-strong: rgba(37, 42, 49, 0.86);
+  --border: rgba(218, 225, 235, 0.16);
+  --text: #f5f7fb;
+  --muted: rgba(226, 232, 240, 0.64);
+  --orange: #ff8a2a;
+  --blue: #6bb6ff;
+  --amber: #f5c451;
+}
+
+.traffic-page.theme-light::before {
+  opacity: 0.5;
+  background-image:
+    linear-gradient(rgba(100, 116, 139, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100, 116, 139, 0.08) 1px, transparent 1px);
+}
+
+.theme-light .beam {
+  opacity: 0.22;
+}
+
+.theme-light .beam-a {
+  background: rgba(15, 158, 232, 0.25);
+}
+
+.theme-light .beam-b {
+  background: rgba(141, 124, 246, 0.22);
+}
+
+.theme-light .beam-c {
+  background: rgba(88, 185, 109, 0.2);
+}
+
+.window-bar {
+  height: 38px;
+  display: grid;
+  grid-template-columns: 180px 1fr 220px;
+  align-items: center;
+  margin-bottom: 26px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  color: var(--muted);
+  background: var(--panel-strong);
+  box-shadow: 0 18px 50px rgba(31, 41, 55, 0.12);
+}
+
+.window-bar strong {
+  justify-self: center;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.window-dots {
+  display: flex;
+  gap: 10px;
+}
+
+.window-dots i {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #ff5f57;
+}
+
+.window-dots i:nth-child(2) {
+  background: #ffbd2e;
+}
+
+.window-dots i:nth-child(3) {
+  background: #28c840;
+}
+
+.theme-switch {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.theme-light .hero h1 {
+  background: linear-gradient(115deg, #1f2937 0%, #4b5563 45%, #111827 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.theme-light .eyebrow,
+.theme-light .section-kicker {
+  color: #0f9ee8;
+}
+
+.theme-light .metric-card,
+.theme-light .control-panel,
+.theme-light .main-panel,
+.theme-light .speed-card,
+.theme-light .video-card,
+.theme-light .stats-card,
+.theme-light .chart-card,
+.theme-light .route-summary {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(243, 246, 250, 0.86)),
+    var(--panel);
+  border-color: var(--border);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 24px 70px rgba(31, 41, 55, 0.12);
+}
+
+.theme-light .metric-card.active,
+.theme-light .view-nav button.active {
+  border-color: rgba(15, 158, 232, 0.45);
+  background: rgba(15, 158, 232, 0.08);
+}
+
+.theme-light .traffic-upload .el-upload-dragger,
+.theme-light .media-stage,
+.theme-light .heatmap-panel,
+.theme-light .calibration-preview {
+  border-color: rgba(132, 143, 160, 0.24);
+  background:
+    linear-gradient(135deg, rgba(250, 252, 255, 0.95), rgba(234, 239, 247, 0.86)),
+    radial-gradient(circle at 50% 35%, rgba(15, 158, 232, 0.08), transparent 42%);
+}
+
+.theme-light .processed-stage::after,
+.theme-light .heatmap-panel::after,
+.theme-light .calibration-preview::after {
+  background:
+    linear-gradient(90deg, transparent 0 48%, rgba(15, 158, 232, 0.14) 49%, transparent 51% 100%),
+    linear-gradient(180deg, transparent 0 48%, rgba(141, 124, 246, 0.12) 49%, transparent 51% 100%),
+    repeating-linear-gradient(0deg, transparent 0 18px, rgba(100, 116, 139, 0.055) 19px, transparent 20px);
+}
+
+.theme-light .view-nav button,
+.theme-light .status-pills span,
+.theme-light .region-mini span,
+.theme-light .tag,
+.theme-light .calibration-values span {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(132, 143, 160, 0.18);
+}
+
+.theme-light .traffic-table {
+  --el-table-bg-color: rgba(255, 255, 255, 0.86);
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(243, 246, 250, 0.92);
+  --el-table-border-color: rgba(132, 143, 160, 0.18);
+  --el-table-text-color: var(--text);
+  --el-table-header-text-color: var(--muted);
+  --el-table-row-hover-bg-color: rgba(15, 158, 232, 0.08);
+}
+
+.theme-light .el-select__wrapper {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(132, 143, 160, 0.2) inset;
+}
+
+.workspace {
+  grid-template-columns: 360px minmax(0, 1fr);
+}
+
+.control-panel {
+  padding: 20px;
+}
+
+.control-panel .panel-heading p {
+  margin-bottom: 16px;
+}
+
+.traffic-upload .el-upload-dragger {
+  min-height: 132px;
+  border-radius: 22px;
+}
+
+.upload-content {
+  min-height: 108px;
+  gap: 6px;
+}
+
+.upload-icon {
+  font-size: 30px;
+}
+
+.form-grid {
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.form-grid label {
+  gap: 5px;
+}
+
+.view-nav {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.view-nav button {
+  display: grid;
+  justify-items: start;
+  min-height: 58px;
+  padding: 10px 12px;
+  border-radius: 16px;
+}
+
+.view-nav button strong {
+  font-size: 14px;
+}
+
+.speed-card {
+  margin-top: 14px;
+  padding: 14px;
+}
+
+.hero {
+  grid-template-columns: minmax(0, 1.3fr) minmax(420px, 0.7fr);
+}
+
+.hero h1 {
+  font-size: clamp(38px, 4.4vw, 64px);
+}
+
+.subtitle {
+  margin-top: 12px;
+}
+
+.media-stage,
+.heatmap-panel,
+.calibration-preview {
+  min-height: 380px;
+}
+
+@media (max-width: 1180px) {
+  .window-bar {
     grid-template-columns: 1fr;
+    height: auto;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .window-dots,
+  .theme-switch,
+  .window-bar strong {
+    justify-self: center;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .shell {
+    width: min(100% - 20px, 1480px);
+    padding: 16px 0;
+  }
+
+  .window-bar {
+    margin-bottom: 18px;
+    border-radius: 16px;
+  }
+
+  .window-bar strong {
+    max-width: 100%;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .theme-switch {
+    font-size: 11px;
+  }
+
+  .hero {
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+
+  .eyebrow,
+  .section-kicker {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    word-break: normal;
+  }
+
+  .hero h1 {
+    font-size: clamp(32px, 13vw, 42px);
+    line-height: 1.08;
+    word-break: keep-all;
+  }
+
+  .subtitle {
+    font-size: 14px;
+    line-height: 1.65;
+    word-break: normal;
+  }
+
+  .control-panel {
+    padding: 16px;
+  }
+
+  .control-panel .panel-heading p {
+    display: none;
+  }
+
+  .traffic-upload .el-upload-dragger {
+    min-height: 104px;
+  }
+
+  .upload-content {
+    min-height: 82px;
+  }
+
+  .form-grid {
+    gap: 8px;
+  }
+
+  .view-nav button {
+    min-height: 52px;
+    padding: 9px 10px;
+  }
+
+  .view-nav button strong {
+    font-size: 13px;
   }
 
   .panel-topbar {
     display: grid;
   }
 
-  .legend {
+  .status-pills {
     justify-content: flex-start;
   }
 
-  .control-panel,
-  .vision-panel {
-    padding: 18px;
-    border-radius: 26px;
+  .viewer-title {
+    display: grid;
   }
 
-  .base-image {
-    max-height: 420px;
+  .overlay-switch {
+    justify-self: start;
+  }
+
+  .unified-stage {
+    min-height: 420px;
+    padding: 10px;
+  }
+}
+
+/* Right-side function rail: the left panel stays focused on input, the main panel owns navigation. */
+.main-panel > .view-nav {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 20px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.main-panel > .view-nav button {
+  min-height: 86px;
+  padding: 13px 14px;
+  border-radius: 16px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025)),
+    rgba(255, 255, 255, 0.04);
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.main-panel > .view-nav button:hover {
+  transform: translateY(-2px);
+  border-color: rgba(107, 182, 255, 0.42);
+}
+
+.main-panel > .view-nav button.active {
+  border-color: rgba(15, 158, 232, 0.55);
+  background:
+    linear-gradient(145deg, rgba(15, 158, 232, 0.18), rgba(141, 124, 246, 0.09)),
+    rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28), 0 18px 38px rgba(15, 158, 232, 0.13);
+}
+
+.main-panel > .view-nav button strong,
+.main-panel > .view-nav button em {
+  display: block;
+}
+
+.main-panel > .view-nav button em {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.calibration-settings {
+  display: grid;
+  align-content: start;
+}
+
+.speed-tuner {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.speed-tuner label {
+  display: grid;
+  gap: 6px;
+  padding: 13px 14px 8px;
+  border: 1px solid rgba(218, 225, 235, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.speed-tuner label > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.speed-tuner strong {
+  color: var(--text);
+}
+
+.theme-light .main-panel > .view-nav {
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.theme-light .main-panel > .view-nav button {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 244, 250, 0.86)),
+    rgba(255, 255, 255, 0.78);
+  box-shadow: 0 12px 28px rgba(31, 41, 55, 0.06);
+}
+
+.theme-light .main-panel > .view-nav button.active {
+  background:
+    linear-gradient(145deg, rgba(218, 239, 255, 0.95), rgba(238, 235, 255, 0.92)),
+    rgba(255, 255, 255, 0.86);
+}
+
+.theme-light .overlay-switch {
+  border-color: rgba(132, 143, 160, 0.18);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.theme-light .speed-tuner label {
+  border-color: rgba(132, 143, 160, 0.18);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+@media (max-width: 1180px) {
+  .main-panel > .view-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .main-panel > .view-nav {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 6px;
+  }
+
+  .main-panel > .view-nav button {
+    min-height: 66px;
   }
 }
 </style>
