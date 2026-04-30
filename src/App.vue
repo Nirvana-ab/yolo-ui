@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="traffic-page" :class="isDarkTheme ? 'theme-dark' : 'theme-light'">
     <div class="beam beam-a"></div>
     <div class="beam beam-b"></div>
@@ -67,7 +67,7 @@
             <div class="upload-content" :class="{ 'is-uploading': loading }">
               <el-icon class="upload-icon"><UploadFilled /></el-icon>
               <strong>{{ loading ? '正在处理监控画面...' : '拖拽视频或图片到这里' }}</strong>
-              <span>上传完成后，结果会显示在右侧“实时监控 / 检测结果”区域</span>
+              <span>上传完成后，结果会显示在右侧实时监控和检测结果区域</span>
             </div>
           </el-upload>
 
@@ -129,8 +129,8 @@
             </div>
           </div>
 
-          <transition name="fade" mode="out-in">
-            <section v-if="activeView === 'monitor'" key="monitor" class="view-stack">
+          <div class="view-holder">
+            <section v-show="activeView === 'monitor'" class="view-stack">
               <div class="video-card monitor-card">
                 <div class="card-title viewer-title">
                   <div>
@@ -153,8 +153,13 @@
                         controls
                         muted
                         playsinline
+                        @timeupdate="handleVideoTimeUpdate"
+                        @seeked="handleVideoTimeUpdate"
+                        @loadedmetadata="handleVideoTimeUpdate"
+                        @play="handleVideoPlay"
+                        @ended="handleVideoEnded"
                       ></video>
-                      <img v-else :src="mediaUrl" class="base-image" :alt="showDetectionOverlay ? '检测结果' : '原始画面'" />
+                      <img v-else-if="mediaType === 'image'" :src="mediaUrl" class="base-image" :alt="showDetectionOverlay ? '检测结果' : '原始画面'" />
 
                       <template v-if="showDetectionOverlay">
                         <svg class="route-layer" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -177,15 +182,16 @@
                         </svg>
 
                         <span
-                          v-for="(item, index) in tableData"
-                          :key="`center-${item.display_name}-${index}`"
+                          v-if="mediaType !== 'video'"
+                          v-for="(item, index) in displayedDetections"
+                          :key="`center-${getDetectionKey(item, index)}`"
                           class="target-center-dot"
                           :style="getCenterStyle(item.bbox, ROUTE_COLORS[index % ROUTE_COLORS.length])"
                         ></span>
 
                         <div
-                          v-for="(item, index) in tableData"
-                          :key="`${item.display_name}-${index}`"
+                          v-for="(item, index) in displayedDetections"
+                          :key="getDetectionKey(item, index)"
                           class="bounding-box"
                           :class="{
                             pedestrian: isPedestrian(item.class_name),
@@ -227,7 +233,7 @@
               </div>
             </section>
 
-            <section v-else-if="activeView === 'analytics'" key="analytics" class="view-stack">
+            <section v-show="activeView === 'analytics'" class="view-stack">
               <div class="chart-grid">
                 <div class="chart-card">
                   <div class="card-title">
@@ -250,8 +256,11 @@
                   </div>
                   <svg class="line-chart" viewBox="0 0 320 150" preserveAspectRatio="none">
                     <polyline :points="flowSeriesPoints" />
-                    <circle v-for="point in flowSeries" :key="point.x" :cx="point.x" :cy="point.y" r="3" />
+                    <circle v-for="point in flowSeries" :key="`${point.frame}-${point.count}`" :cx="point.x" :cy="point.y" r="3" />
                   </svg>
+                  <p class="chart-note">
+                    {{ flowHistory.length ? `最新检测帧：${frameCount}，当前目标数：${tableData.length}` : '上传视频后，这里会按检测帧记录目标数量变化。' }}
+                  </p>
                 </div>
 
                 <div class="chart-card">
@@ -283,7 +292,7 @@
               </div>
             </section>
 
-            <section v-else-if="activeView === 'tables'" key="tables" class="view-stack">
+            <section v-show="activeView === 'tables'" class="view-stack">
               <el-tabs class="data-tabs">
                 <el-tab-pane label="检测记录">
                   <el-table :data="tableData" height="420" class="traffic-table">
@@ -320,7 +329,7 @@
               </el-tabs>
             </section>
 
-            <section v-else-if="activeView === 'calibration'" key="calibration" class="view-stack">
+            <section v-show="activeView === 'calibration'" class="view-stack">
               <div class="calibration-grid">
                 <div class="chart-card calibration-settings">
                   <div class="card-title">
@@ -328,8 +337,13 @@
                     <strong>速度校准配置</strong>
                   </div>
                   <p class="flow-text">
-                    拖动下方滑块即可调整两条测速线和实际线间距离，右侧预览会同步显示位置变化。
+                    按步骤完成标定：先把 A/B 两条线放到道路上的两个参考位置，再输入两线真实距离。
                   </p>
+                  <div class="calibration-guide">
+                    <span>1. 将 Line A 放在目标先经过的位置</span>
+                    <span>2. 将 Line B 放在目标后经过的位置</span>
+                    <span>3. 按现场距离调整线间实际距离</span>
+                  </div>
                   <div class="speed-tuner">
                     <label>
                       <span>测速线 A <strong>{{ speedLineA }}%</strong></span>
@@ -343,10 +357,14 @@
                       <span>线间实际距离 <strong>{{ lineDistanceMeters }} m</strong></span>
                       <el-slider v-model="lineDistanceMeters" :min="5" :max="80" :step="1" />
                     </label>
+                    <label>
+                      <span>像素标定 <strong>{{ metersPerPixel.toFixed(2) }} m/px</strong></span>
+                      <el-slider v-model="metersPerPixel" :min="0.02" :max="0.5" :step="0.01" />
+                    </label>
                   </div>
                   <div class="calibration-values">
-                    <span>算法说明：目标先后穿越 A / B 两条线后，根据时间差计算速度。</span>
-                    <span>像素标定：{{ metersPerPixel.toFixed(2) }} m/px</span>
+                    <span>当前页面显示的是估算速度，数值会受视频角度、道路透视和标定距离影响。</span>
+                    <span>推荐使用现场已知距离校准，比单纯设置 m/px 更稳定。</span>
                   </div>
                 </div>
                 <div class="chart-card calibration-preview">
@@ -356,7 +374,7 @@
               </div>
             </section>
 
-            <section v-else key="heatmap" class="view-stack">
+            <section v-show="activeView === 'heatmap'" class="view-stack">
               <div class="heatmap-panel">
                 <div v-for="point in heatmapPoints" :key="point.id" class="heat-point" :style="point.style"></div>
                 <div class="heatmap-empty" v-if="heatmapPoints.length === 0">
@@ -365,7 +383,7 @@
                 </div>
               </div>
             </section>
-          </transition>
+          </div>
         </section>
       </main>
     </div>
@@ -404,16 +422,36 @@ interface DetectResponse {
   }
 }
 
-interface TrackResponse {
+interface DetectRequestOptions {
+  silent?: boolean
+}
+
+interface ApiResponseData<T> {
   status: string
   message?: string
-  data: {
+  data: T
+}
+
+interface VideoStreamStartData {
+  session_id: string
+  stats_url: string
+  img_width: number
+  img_height: number
+  fps: number
+}
+
+interface VideoStreamStatsData {
+  tracks: Detection[]
+  frames?: Array<{
+    frame_count: number
     tracks: Detection[]
-    img_width: number
-    img_height: number
-    frame_count?: number
-    fps?: number
-  }
+  }>
+  img_width: number
+  img_height: number
+  frame_count: number
+  fps: number
+  running: boolean
+  error?: string
 }
 
 interface RoutePoint {
@@ -431,10 +469,20 @@ interface TrafficRoute {
   points: RoutePoint[]
 }
 
+interface FlowHistoryPoint {
+  frame: number
+  label: string
+  count: number
+}
+
 const PERSON_KEYWORDS = ['person', 'pedestrian', 'people', '行人']
 const VEHICLE_KEYWORDS = ['car', 'truck', 'bus', 'motorcycle', 'bike', 'bicycle', 'vehicle', 'van', 'taxi', '车辆']
 const TRACKABLE_KEYWORDS = [...PERSON_KEYWORDS, ...VEHICLE_KEYWORDS]
 const ROUTE_COLORS = ['#ff8a2a', '#6bb6ff', '#f5c451', '#d9dde7', '#9ca7b8', '#ff5c5c', '#b8c4d8', '#4f83ff']
+const API_BASE = 'http://localhost:8080'
+const FLOW_BUCKET_SECONDS = 3
+const VIDEO_ROUTE_MAX_POINTS = 10
+const VIDEO_ROUTE_MIN_DISTANCE_PERCENT = 1.2
 
 const views: Array<{ key: ViewKey; label: string; kicker: string; hint: string }> = [
   { key: 'monitor', label: '实时监控', kicker: 'Live', hint: '查看原始与识别画面' },
@@ -448,9 +496,13 @@ const activeView = ref<ViewKey>('monitor')
 const isDarkTheme = ref(false)
 const showDetectionOverlay = ref(true)
 const mediaUrl = ref<string>('')
+const videoStreamSessionId = ref<string>('')
 const mediaType = ref<MediaType>('image')
 const tableData = ref<Detection[]>([])
+const detectionFrameCache = ref<Record<number, Detection[]>>({})
+const flowHistory = ref<FlowHistoryPoint[]>([])
 const loading = ref<boolean>(false)
+const videoDetecting = ref<boolean>(false)
 const confThreshold = ref<number>(0.25)
 const hoveredIndex = ref<number | null>(null)
 const currentImgWidth = ref<number>(1)
@@ -458,6 +510,10 @@ const currentImgHeight = ref<number>(1)
 const currentFile = ref<File | null>(null)
 const frameCount = ref<number>(0)
 const fps = ref<number>(0)
+const currentVideoTime = ref<number>(0)
+const videoEnded = ref<boolean>(false)
+const streamStatsTimer = ref<number | null>(null)
+const lastReceivedFrame = ref<number>(0)
 const selectedModel = ref('best.onnx')
 const classMode = ref('traffic')
 const metersPerPixel = ref(0.12)
@@ -490,9 +546,19 @@ const targetStats = computed(() => {
 })
 
 const filteredTableData = computed(() => {
-  if (classMode.value === 'all') return tableData.value
-  if (classMode.value === 'vehicle') return tableData.value.filter((item) => isVehicle(item.class_name))
-  return tableData.value.filter((item) => isTrackable(item.class_name))
+  const source = activeDetectionData.value
+  if (classMode.value === 'all') return source
+  if (classMode.value === 'vehicle') return source.filter((item) => isVehicle(item.class_name))
+  return source.filter((item) => isTrackable(item.class_name))
+})
+
+const displayedDetections = computed(() => {
+  return filteredTableData.value
+})
+
+const activeDetectionData = computed(() => {
+  if (mediaType.value !== 'video') return tableData.value
+  return getSyncedVideoDetections()
 })
 
 const pedestrianCount = computed(() => filteredTableData.value.filter((item) => isPedestrian(item.class_name)).length)
@@ -500,8 +566,7 @@ const vehicleCount = computed(() => filteredTableData.value.filter((item) => isV
 
 const trafficRoutes = computed<TrafficRoute[]>(() => {
   return filteredTableData.value.map((item, index) => {
-    const fallbackCenter = item.center || getCenterPixel(item.bbox)
-    const points = normalizeTrajectory(item.trajectory?.length ? item.trajectory : [fallbackCenter])
+    const points = getRoutePointsForDetection(item)
     const direction = item.direction || getRouteDirection(points)
 
     return {
@@ -517,6 +582,12 @@ const trafficRoutes = computed<TrafficRoute[]>(() => {
 })
 
 const flowInsight = computed(() => {
+  if (mediaType.value === 'video' && videoEnded.value) {
+    return `视频已结束，当前停留帧识别到 ${filteredTableData.value.length} 个目标。拖动进度条可查看已分析帧的检测结果。`
+  }
+  if (mediaType.value === 'video' && videoDetecting.value) {
+    return `后端正在分析视频，当前播放帧附近识别到 ${filteredTableData.value.length} 个目标。`
+  }
   if (filteredTableData.value.length === 0) return '当前画面暂无可用于统计的行人或车辆目标。'
   const regions = regionStats.value.map((region) => `${region.name}${region.count}`).join('，')
   return `已识别 ${filteredTableData.value.length} 个目标，其中行人 ${pedestrianCount.value} 个、车辆 ${vehicleCount.value} 辆。区域分布：${regions}。`
@@ -589,14 +660,46 @@ const speedBuckets = computed(() => {
 })
 
 const flowSeries = computed(() => {
-  const base = Math.max(filteredTableData.value.length, 1)
-  return Array.from({ length: 8 }, (_, index) => {
-    const value = Math.max(0, base + Math.round(Math.sin(index * 0.9) * base * 0.35) + index)
-    return {
-      x: 16 + index * 41,
-      y: 132 - Math.min(110, value * 9),
-    }
+  if (flowHistory.value.length === 0) {
+    return [{
+      frame: 0,
+      label: '当前',
+      count: filteredTableData.value.length,
+      x: 160,
+      y: 132 - Math.min(112, filteredTableData.value.length * 14),
+    }]
+  }
+
+  const bucketFrames = Math.max(1, Math.round((fps.value || 25) * FLOW_BUCKET_SECONDS))
+  const buckets = new Map<number, FlowHistoryPoint[]>()
+  flowHistory.value.forEach((point) => {
+    const bucketIndex = Math.floor(point.frame / bucketFrames)
+    buckets.set(bucketIndex, [...(buckets.get(bucketIndex) || []), point])
   })
+
+  const aggregated = Array.from(buckets.entries())
+    .sort(([a], [b]) => a - b)
+    .slice(-10)
+    .map(([bucketIndex, points]) => {
+      const avgCount = points.reduce((sum, point) => sum + point.count, 0) / points.length
+      const seconds = bucketIndex * FLOW_BUCKET_SECONDS
+      const minute = Math.floor(seconds / 60)
+      const second = Math.floor(seconds % 60)
+      return {
+        frame: bucketIndex * bucketFrames,
+        label: `${minute}:${second.toString().padStart(2, '0')}`,
+        count: Number(avgCount.toFixed(1)),
+      }
+    })
+
+  const maxCount = Math.max(...aggregated.map((point) => point.count), 1)
+  const step = aggregated.length > 1 ? 288 / (aggregated.length - 1) : 0
+
+  return aggregated.map((point, index) => ({
+    ...point,
+    x: aggregated.length > 1 ? 16 + index * step : 160,
+    y: 132 - (point.count / maxCount) * 112,
+  }))
 })
 
 const flowSeriesPoints = computed(() => flowSeries.value.map((point) => `${point.x},${point.y}`).join(' '))
@@ -635,6 +738,133 @@ const getTargetLabel = (className: string) => {
   if (isPedestrian(className)) return '行人'
   if (isVehicle(className)) return '车辆'
   return className
+}
+
+const getSyncedVideoDetections = () => {
+  const videoFps = fps.value || 25
+  const currentFrame = Math.max(1, Math.round(currentVideoTime.value * videoFps) + 1)
+  const availableFrames = Object.keys(detectionFrameCache.value)
+    .map(Number)
+    .filter((frame) => Number.isFinite(frame))
+    .sort((a, b) => a - b)
+
+  if (availableFrames.length === 0) return []
+
+  const previousFrame = [...availableFrames].reverse().find((frame) => frame <= currentFrame)
+  const nextFrame = availableFrames.find((frame) => frame >= currentFrame)
+  const maxGap = Math.max(4, Math.round(videoFps * 0.45))
+
+  if (previousFrame === undefined && nextFrame === undefined) {
+    return []
+  }
+
+  if (previousFrame !== undefined && nextFrame !== undefined) {
+    if (previousFrame === nextFrame) {
+      return detectionFrameCache.value[previousFrame] || []
+    }
+    if (currentFrame - previousFrame <= maxGap && nextFrame - currentFrame <= maxGap) {
+      return interpolateDetections(
+        detectionFrameCache.value[previousFrame] || [],
+        detectionFrameCache.value[nextFrame] || [],
+        (currentFrame - previousFrame) / Math.max(1, nextFrame - previousFrame),
+      )
+    }
+  }
+
+  const nearestFrame = previousFrame ?? nextFrame
+  if (nearestFrame === undefined || Math.abs(nearestFrame - currentFrame) > maxGap) return []
+  return detectionFrameCache.value[nearestFrame] || []
+}
+
+const interpolateDetections = (previousItems: Detection[], nextItems: Detection[], ratio: number) => {
+  return previousItems.map((previousItem, index) => {
+    const nextItem = findMatchingDetection(previousItem, nextItems)
+    if (!nextItem) return previousItem
+    const bbox = previousItem.bbox.map((value, bboxIndex) => value + (nextItem.bbox[bboxIndex] - value) * ratio)
+    return {
+      ...previousItem,
+      confidence: previousItem.confidence + (nextItem.confidence - previousItem.confidence) * ratio,
+      bbox,
+      center: getCenterPixel(bbox),
+      trajectory: undefined,
+      display_name: previousItem.display_name || nextItem.display_name || `${getTargetLabel(previousItem.class_name)} ${index + 1}`,
+    }
+  })
+}
+
+const findMatchingDetection = (item: Detection, candidates: Detection[]) => {
+  if (item.track_id !== undefined) {
+    const sameTrack = candidates.find((candidate) => candidate.track_id === item.track_id)
+    if (sameTrack) return sameTrack
+  }
+
+  const itemCenter = getCenterPixel(item.bbox)
+  const sameClassCandidates = candidates.filter((candidate) => getTargetLabel(candidate.class_name) === getTargetLabel(item.class_name))
+  let bestCandidate: Detection | undefined
+  let bestDistance = Number.POSITIVE_INFINITY
+  sameClassCandidates.forEach((candidate) => {
+    const candidateCenter = getCenterPixel(candidate.bbox)
+    const distance = Math.hypot(candidateCenter.x - itemCenter.x, candidateCenter.y - itemCenter.y)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      bestCandidate = candidate
+    }
+  })
+
+  const maxDistance = Math.max(currentImgWidth.value, currentImgHeight.value) * 0.08
+  return bestDistance <= maxDistance ? bestCandidate : undefined
+}
+
+const getRoutePointsForDetection = (item: Detection) => {
+  if (mediaType.value === 'video') {
+    return getVideoRoutePoints(item)
+  }
+  const fallbackCenter = item.center || getCenterPixel(item.bbox)
+  return simplifyRoutePoints(normalizeTrajectory(item.trajectory?.length ? item.trajectory : [fallbackCenter]), 0.4)
+}
+
+const getVideoRoutePoints = (item: Detection) => {
+  if (item.track_id === undefined) {
+    return []
+  }
+
+  const currentFrame = getCurrentVideoFrame()
+  const frames = Object.keys(detectionFrameCache.value)
+    .map(Number)
+    .filter((frame) => Number.isFinite(frame) && frame <= currentFrame)
+    .sort((a, b) => a - b)
+
+  const rawPoints: RawPoint[] = []
+  for (let i = frames.length - 1; i >= 0 && rawPoints.length < VIDEO_ROUTE_MAX_POINTS; i--) {
+    const frameTracks = detectionFrameCache.value[frames[i]] || []
+    const frameTrack = frameTracks.find((candidate) => candidate.track_id === item.track_id)
+    if (frameTrack) {
+      rawPoints.unshift(frameTrack.center || getCenterPixel(frameTrack.bbox))
+    }
+  }
+
+  return simplifyRoutePoints(normalizeTrajectory(rawPoints), VIDEO_ROUTE_MIN_DISTANCE_PERCENT)
+}
+
+const getCurrentVideoFrame = () => {
+  const videoFps = fps.value || 25
+  return Math.max(1, Math.round(currentVideoTime.value * videoFps) + 1)
+}
+
+const simplifyRoutePoints = (points: RoutePoint[], minDistancePercent: number) => {
+  const simplified: RoutePoint[] = []
+  points.forEach((point) => {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return
+    const clampedPoint = {
+      x: Math.max(0, Math.min(100, point.x)),
+      y: Math.max(0, Math.min(100, point.y)),
+    }
+    const lastPoint = simplified[simplified.length - 1]
+    if (!lastPoint || Math.hypot(clampedPoint.x - lastPoint.x, clampedPoint.y - lastPoint.y) >= minDistancePercent) {
+      simplified.push(clampedPoint)
+    }
+  })
+  return simplified
 }
 
 const normalizeTrajectory = (points: RawPoint[] = []) => {
@@ -693,11 +923,53 @@ const formatBbox = (bbox: number[]) => {
   return bbox.map((value) => value.toFixed(0)).join(', ')
 }
 
+const recordFlowPoint = (frame: number, count: number) => {
+  if (frame <= 0) return
+  const lastPoint = flowHistory.value[flowHistory.value.length - 1]
+  if (lastPoint?.frame === frame) return
+
+  const seconds = frame / (fps.value || 25)
+  const minute = Math.floor(seconds / 60)
+  const second = Math.floor(seconds % 60)
+  flowHistory.value = [
+    ...flowHistory.value,
+    {
+      frame,
+      count,
+      label: `${minute}:${second.toString().padStart(2, '0')}`,
+    },
+  ].slice(-240)
+}
+
 const reAnalyze = () => {
+  if (mediaType.value === 'video') {
+    if (currentFile.value) void uploadMedia()
+    return
+  }
   if (currentFile.value) uploadMedia()
 }
 
+const handleVideoTimeUpdate = (event: Event) => {
+  const video = event.target as HTMLVideoElement
+  currentVideoTime.value = video.currentTime || 0
+  if (video.videoWidth && video.videoHeight) {
+    currentImgWidth.value = video.videoWidth
+    currentImgHeight.value = video.videoHeight
+  }
+}
+
+const handleVideoPlay = () => {
+  videoEnded.value = false
+}
+
+const handleVideoEnded = (event: Event) => {
+  const video = event.target as HTMLVideoElement
+  currentVideoTime.value = video.currentTime || 0
+  videoEnded.value = true
+}
+
 const uploadMedia = async (options?: { file?: File }) => {
+  stopBackendVideoStream()
   if (options?.file) {
     currentFile.value = options.file
     mediaType.value = options.file.type.startsWith('video/') ? 'video' : 'image'
@@ -709,8 +981,19 @@ const uploadMedia = async (options?: { file?: File }) => {
   if (!currentFile.value) return
 
   tableData.value = []
+  detectionFrameCache.value = {}
+  flowHistory.value = []
   frameCount.value = 0
   fps.value = 0
+  currentVideoTime.value = 0
+  videoEnded.value = false
+  lastReceivedFrame.value = 0
+
+  if (mediaType.value === 'video') {
+    await startBackendVideoStream()
+    return
+  }
+
   loading.value = true
 
   const formData = new FormData()
@@ -720,56 +1003,139 @@ const uploadMedia = async (options?: { file?: File }) => {
   formData.append('classes', classMode.value)
 
   try {
-    if (mediaType.value === 'video') {
-      await requestTrack(formData)
-    } else {
-      await requestDetect(formData)
-    }
+    await requestDetect(formData)
     activeView.value = 'monitor'
   } finally {
     loading.value = false
   }
 }
 
-const requestDetect = async (formData: FormData) => {
+const startBackendVideoStream = async () => {
+  if (!currentFile.value) return
+
+  loading.value = true
+  const formData = new FormData()
+  formData.append('file', currentFile.value)
+  formData.append('conf', confThreshold.value.toString())
+  formData.append('model', selectedModel.value)
+  formData.append('classes', classMode.value)
+
   try {
-    const response = await axios.post<DetectResponse>('http://localhost:8080/api/detect', formData, {
+    const response = await axios.post<ApiResponseData<VideoStreamStartData>>(`${API_BASE}/api/stream/start`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
 
     const resData = response.data
     if (resData.status !== 'success') {
-      ElMessage.error(resData.message || '检测失败')
+      ElMessage.error(resData.message || '视频流启动失败')
+      return
+    }
+
+    currentImgWidth.value = resData.data.img_width
+    currentImgHeight.value = resData.data.img_height
+    fps.value = resData.data.fps
+    videoStreamSessionId.value = resData.data.session_id
+    videoDetecting.value = true
+    startStreamStatsPolling(resData.data.stats_url)
+    activeView.value = 'monitor'
+    ElMessage.success('后端视频分析已完成')
+  } catch {
+    ElMessage.error('视频分析启动失败，请确认后端服务已启动')
+  } finally {
+    loading.value = false
+  }
+}
+
+const startStreamStatsPolling = (statsUrl: string) => {
+  if (streamStatsTimer.value !== null) {
+    window.clearInterval(streamStatsTimer.value)
+    streamStatsTimer.value = null
+  }
+
+  const loadStats = async () => {
+    try {
+      const response = await axios.get<ApiResponseData<VideoStreamStatsData>>(toApiUrl(statsUrl), {
+        params: { afterFrame: lastReceivedFrame.value },
+      })
+      const resData = response.data
+      if (resData.status !== 'success') return
+
+      const stats = resData.data
+      const receivedFrameCount = stats.frames?.length || 0
+      currentImgWidth.value = stats.img_width
+      currentImgHeight.value = stats.img_height
+      frameCount.value = stats.frame_count
+      fps.value = stats.fps
+      const namedTracks = withDisplayNames(stats.tracks)
+      tableData.value = namedTracks
+
+      const nextCache = { ...detectionFrameCache.value }
+      stats.frames?.forEach((frame) => {
+        if (frame.frame_count > 0) {
+          const frameTracks = withDisplayNames(frame.tracks)
+          nextCache[frame.frame_count] = frameTracks
+          recordFlowPoint(frame.frame_count, frameTracks.length)
+          lastReceivedFrame.value = Math.max(lastReceivedFrame.value, frame.frame_count)
+        }
+      })
+      if (stats.frame_count > 0 && !nextCache[stats.frame_count]) {
+        nextCache[stats.frame_count] = namedTracks
+      }
+      detectionFrameCache.value = nextCache
+      videoDetecting.value = stats.running
+
+      if (!stats.running && receivedFrameCount === 0 && streamStatsTimer.value !== null) {
+        window.clearInterval(streamStatsTimer.value)
+        streamStatsTimer.value = null
+      }
+    } catch (error) {
+      console.warn('stats polling failed', error)
+    }
+  }
+
+  void loadStats()
+  streamStatsTimer.value = window.setInterval(loadStats, 160)
+}
+
+const stopBackendVideoStream = () => {
+  if (streamStatsTimer.value !== null) {
+    window.clearInterval(streamStatsTimer.value)
+    streamStatsTimer.value = null
+  }
+
+  const sessionId = videoStreamSessionId.value
+  videoStreamSessionId.value = ''
+  detectionFrameCache.value = {}
+  lastReceivedFrame.value = 0
+  videoDetecting.value = false
+
+  if (sessionId) {
+    void axios.post(`${API_BASE}/api/stream/${sessionId}/stop`).catch(() => undefined)
+  }
+}
+
+const toApiUrl = (path: string) => {
+  return path.startsWith('http') ? path : `${API_BASE}${path}`
+}
+
+const requestDetect = async (formData: FormData, options: DetectRequestOptions = {}) => {
+  try {
+    const response = await axios.post<DetectResponse>(`${API_BASE}/api/detect`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+
+    const resData = response.data
+    if (resData.status !== 'success') {
+      if (!options.silent) ElMessage.error(resData.message || '检测失败')
       return
     }
 
     currentImgWidth.value = resData.data.img_width
     currentImgHeight.value = resData.data.img_height
     tableData.value = withDisplayNames(resData.data.detections)
+    recordFlowPoint(1, tableData.value.length)
   } catch {
-    ElMessage.error('图片检测失败，请确认后端服务已启动')
-  }
-}
-
-const requestTrack = async (formData: FormData) => {
-  try {
-    const response = await axios.post<TrackResponse>('http://localhost:8080/api/track', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-
-    const resData = response.data
-    if (resData.status !== 'success') {
-      ElMessage.error(resData.message || '视频追踪失败')
-      return
-    }
-
-    currentImgWidth.value = resData.data.img_width
-    currentImgHeight.value = resData.data.img_height
-    frameCount.value = resData.data.frame_count || 0
-    fps.value = resData.data.fps || 0
-    tableData.value = withDisplayNames(resData.data.tracks)
-  } catch {
-    ElMessage.error('视频追踪失败，请确认后端服务已启动')
+    if (!options.silent) ElMessage.error('图片检测失败，请确认后端服务已启动')
   }
 }
 
@@ -787,6 +1153,11 @@ const withDisplayNames = (items: Detection[]) => {
           : `${label} ${typeCounts[label]}`,
     }
   })
+}
+
+const getDetectionKey = (item: Detection, index: number) => {
+  if (item.track_id !== undefined) return `track-${item.track_id}`
+  return item.display_name || `${item.class_name}-${index}`
 }
 
 const getBoxStyle = (bbox: number[]) => {
@@ -1157,6 +1528,10 @@ body {
   gap: 18px;
 }
 
+.view-holder {
+  position: relative;
+}
+
 .video-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1326,6 +1701,7 @@ body {
   border-radius: 999px;
   transform: translate(-50%, -50%);
   pointer-events: none;
+  transition: left 0.06s linear, top 0.06s linear, opacity 0.12s ease;
 }
 
 .speed-line {
@@ -1348,7 +1724,15 @@ body {
   border-radius: 10px;
   background: rgba(255, 138, 42, 0.08);
   box-shadow: 0 0 20px rgba(255, 138, 42, 0.26);
-  transition: opacity 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
+  transition:
+    left 0.06s linear,
+    top 0.06s linear,
+    width 0.06s linear,
+    height 0.06s linear,
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    border-color 0.18s ease;
+  will-change: left, top, width, height;
 }
 
 .bounding-box.pedestrian {
@@ -1473,6 +1857,12 @@ body {
   fill: var(--orange);
 }
 
+.chart-note {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .histogram,
 .area-bars {
   display: flex;
@@ -1521,6 +1911,20 @@ body {
   display: grid;
   gap: 10px;
   margin-top: 18px;
+}
+
+.calibration-guide {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 8px;
+}
+
+.calibration-guide span {
+  padding: 10px 12px;
+  border: 1px solid rgba(218, 225, 235, 0.14);
+  border-radius: 14px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .calibration-values span {
@@ -2123,3 +2527,6 @@ body {
   }
 }
 </style>
+
+
+
