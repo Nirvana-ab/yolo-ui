@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     proxy: {
-      // 前端请求 /api/** → 转发到 Spring Boot
+      // Forward frontend /api/** requests to the backend service.
       '/api': {
         target: 'http://127.0.0.1:8080',
         changeOrigin: true,

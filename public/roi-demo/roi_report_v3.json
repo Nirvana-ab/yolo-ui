@@ -1,0 +1,247 @@
+{
+  "scheme": "mock_function_verification",
+  "note": "This report is only for function verification and does not support formal mAP/Precision/Recall claims.",
+  "image_width": 1280,
+  "image_height": 720,
+  "small_object_threshold": 0.01,
+  "risk_threshold": 0.45,
+  "candidate_threshold": 0.45,
+  "full_detection_count": 10,
+  "high_risk_roi_count": 2,
+  "accepted_roi_count": 2,
+  "rejected_roi_count": 2,
+  "rois": [
+    {
+      "id": 0,
+      "roi": [
+        0,
+        0,
+        320,
+        180
+      ],
+      "score": 0.3062,
+      "far_score": 0.875,
+      "heat_score": 0.0,
+      "density_score": 0.0,
+      "missing_score": 0.0
+    },
+    {
+      "id": 1,
+      "roi": [
+        320,
+        0,
+        640,
+        180
+      ],
+      "score": 0.5159,
+      "far_score": 0.875,
+      "heat_score": 0.0485,
+      "density_score": 0.6667,
+      "missing_score": 0.0
+    },
+    {
+      "id": 2,
+      "roi": [
+        640,
+        0,
+        960,
+        180
+      ],
+      "score": 0.4129,
+      "far_score": 0.875,
+      "heat_score": 0.0333,
+      "density_score": 0.3333,
+      "missing_score": 0.0
+    },
+    {
+      "id": 3,
+      "roi": [
+        960,
+        0,
+        1280,
+        180
+      ],
+      "score": 0.3062,
+      "far_score": 0.875,
+      "heat_score": 0.0,
+      "density_score": 0.0,
+      "missing_score": 0.0
+    },
+    {
+      "id": 4,
+      "roi": [
+        0,
+        180,
+        320,
+        360
+      ],
+      "score": 0.2188,
+      "far_score": 0.625,
+      "heat_score": 0.0,
+      "density_score": 0.0,
+      "missing_score": 0.0
+    },
+    {
+      "id": 5,
+      "roi": [
+        320,
+        180,
+        640,
+        360
+      ],
+      "score": 0.3244,
+      "far_score": 0.625,
+      "heat_score": 0.0283,
+      "density_score": 0.3333,
+      "missing_score": 0.0
+    },
+    {
+      "id": 6,
+      "roi": [
+        640,
+        180,
+        960,
+        360
+      ],
+      "score": 0.5321,
+      "far_score": 0.625,
+      "heat_score": 0.0667,
+      "density_score": 1.0,
+      "missing_score": 0.0
+    },
+    {
+      "id": 7,
+      "roi": [
+        960,
+        180,
+        1280,
+        360
+      ],
+      "score": 0.2188,
+      "far_score": 0.625,
+      "heat_score": 0.0,
+      "density_score": 0.0,
+      "missing_score": 0.0
+    },
+    {
+      "id": 8,
+      "roi": [
+        0,
+        360,
+        320,
+        540
+      ],
+      "score": 0.133,
+      "far_score": 0.375,
+      "heat_score": 0.0088,
+      "density_score": 0.0,
+      "missing_score": 0.0
+    },
+    {
+      "id": 9,
+      "roi": [
+        320,
+        360,
+        640,
+        540
+      ],
+      "score": 0.134,
+      "far_score": 0.375,
+      "heat_score": 0.014,
+      "density_score": 0.0,
+      "missing_score": 0.0
+    },
+    {
+      "id": 10,
+      "roi": [
+        640,
+        360,
+        960,
+        540
+      ],
+      "score": 0.1312,
+      "far_score": 0.375,
+      "heat_score": 0.0,
+      "density_score": 0.0,
+      "missing_score": 0.0
+    },
+    {
+      "id": 11,
+      "roi": [
+        960,
+        360,
+        1280,
+        540
+      ],
+      "score": 0.1312,
+      "far_score": 0.375,
+      "heat_score": 0.0,
+      "density_score": 0.0,
+      "missing_score": 0.0
+    }
+  ],
+  "accepted_candidates": [
+    {
+      "box": [
+        570.0,
+        150.0,
+        592.0,
+        176.0
+      ],
+      "cls": "pedestrian",
+      "conf": 0.54,
+      "source": "roi",
+      "roi_score": 0.5159,
+      "small_score": 1.0,
+      "overlap": 0.0,
+      "q_score": 0.572
+    },
+    {
+      "box": [
+        900.0,
+        220.0,
+        930.0,
+        252.0
+      ],
+      "cls": "pedestrian",
+      "conf": 0.5,
+      "source": "roi",
+      "roi_score": 0.5321,
+      "small_score": 1.0,
+      "overlap": 0.0,
+      "q_score": 0.558
+    }
+  ],
+  "rejected_candidates": [
+    {
+      "box": [
+        702.0,
+        152.0,
+        734.0,
+        182.0
+      ],
+      "cls": "car",
+      "conf": 0.6,
+      "source": "roi",
+      "roi_score": 0.4129,
+      "small_score": 1.0,
+      "overlap": 0.7778,
+      "q_score": 0.3399
+    },
+    {
+      "box": [
+        958.0,
+        78.0,
+        985.0,
+        102.0
+      ],
+      "cls": "car",
+      "conf": 0.36,
+      "source": "roi",
+      "roi_score": 0.3062,
+      "small_score": 1.0,
+      "overlap": 0.0,
+      "q_score": 0.4385
+    }
+  ]
+}
