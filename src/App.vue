@@ -20,6 +20,7 @@
           :class-mode="classMode"
           :conf-threshold="confThreshold"
           :meters-per-pixel="metersPerPixel"
+          :model-options="MODEL_OPTIONS"
           :loading="loading"
           @update:selected-model="selectedModel = $event"
           @update:class-mode="classMode = $event"
@@ -114,7 +115,7 @@ import DataTablesView from './components/views/DataTablesView.vue';
 import CalibrationView from './components/views/CalibrationView.vue';
 import HeatmapView from './components/views/HeatmapView.vue';
 import RoiDemoView from './components/views/RoiDemoView.vue';
-import { TARGET_COLORS, views } from './constants/traffic';
+import { MODEL_OPTIONS, TARGET_COLORS, views } from './constants/traffic';
 import { useTrafficAnalysis } from './composables/useTrafficAnalysis';
 import { useTrafficMedia } from './composables/useTrafficMedia';
 

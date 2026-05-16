@@ -31,6 +31,19 @@ export const FLOW_BUCKET_SECONDS = 3;
 export const VIDEO_BACKEND_CONF_THRESHOLD = 0.1;
 export const MAX_REASONABLE_SPEED_KMH = 180;
 
+export const MODEL_OPTIONS = [
+  {
+    label: '最新训练模型 mainTask_latest.onnx (960)',
+    value: 'mainTask_latest.onnx',
+    inputSize: 960,
+  },
+  {
+    label: 'Baseline best.onnx (640)',
+    value: 'best.onnx',
+    inputSize: 640,
+  },
+];
+
 export const views = [
   { key: 'monitor', label: '实时监控', kicker: 'Live', hint: '查看原始与识别画面' },
   { key: 'analytics', label: '统计图表', kicker: 'Charts', hint: '观察数量与趋势' },
